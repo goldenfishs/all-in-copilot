@@ -100,14 +100,34 @@ export class AllInCopilotProvider implements vscode.LanguageModelChatProvider {
       toolChoice: prepared.body.tool_choice,
     });
 
-    const response = await fetch(prepared.url, {
+    let response = await fetch(prepared.url, {
       method: 'POST',
       headers: prepared.headers,
       body: JSON.stringify(prepared.body),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      let errorText = await response.text();
+      if (shouldRetryDeepSeekWithoutThinking(model, prepared.body, errorText)) {
+        logger.warn('Retrying DeepSeek request with thinking disabled after reasoning_content replay error.');
+        const retryBody = disableDeepSeekThinking(prepared.body);
+        response = await fetch(prepared.url, {
+          method: 'POST',
+          headers: prepared.headers,
+          body: JSON.stringify(retryBody),
+        });
+
+        if (response.ok) {
+          if (!response.body) {
+            throw new Error('All in Copilot API returned no response body.');
+          }
+          await prepared.processStream(response.body, progress, token);
+          return;
+        }
+
+        errorText = await response.text();
+      }
+
       logger.error('Request failed.', {
         status: response.status,
         statusText: response.statusText,
@@ -163,6 +183,47 @@ function toChatInfo(model: ResolvedModelConfig, hasApiKey: boolean): ModelPicker
   };
 }
 
+function shouldRetryDeepSeekWithoutThinking(
+  model: ResolvedModelConfig,
+  body: Record<string, unknown>,
+  errorText: string,
+): boolean {
+  const provider = model.provider.toLowerCase();
+  const id = model.id.toLowerCase();
+  const thinking = body.thinking as Record<string, unknown> | undefined;
+  return (
+    (provider.includes('deepseek') || id.startsWith('deepseek-')) &&
+    id.startsWith('deepseek-v4') &&
+    thinking?.type !== 'disabled' &&
+    /reasoning_content/i.test(errorText) &&
+    /thinking/i.test(errorText)
+  );
+}
+
+function disableDeepSeekThinking(body: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...body,
+    reasoning_effort: undefined,
+    thinking: { type: 'disabled' },
+    messages: stripReasoningContent(body.messages),
+  };
+}
+
+function stripReasoningContent(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    return value;
+  }
+
+  return value.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return item;
+    }
+
+    const { reasoning_content: _reasoningContent, ...rest } = item as Record<string, unknown>;
+    return rest;
+  });
+}
+
 function buildConfigurationSchema(model: ResolvedModelConfig): Pick<ModelPickerChatInformation, 'configurationSchema'> {
   if (model.apiType === 'anthropic' || model.provider.toLowerCase().includes('anthropic')) {
     return {};
@@ -170,6 +231,23 @@ function buildConfigurationSchema(model: ResolvedModelConfig): Pick<ModelPickerC
 
   const id = model.id.toLowerCase();
   const provider = model.provider.toLowerCase();
+  if ((provider.includes('deepseek') || id.startsWith('deepseek-')) && id.startsWith('deepseek-v4')) {
+    return {
+      configurationSchema: {
+        properties: {
+          reasoningEffort: {
+            type: 'string',
+            title: '推理强度',
+            enum: ['high', 'max'],
+            enumItemLabels: ['高', '最高'],
+            default: model.reasoningEffort === 'max' ? 'max' : 'high',
+            group: 'navigation',
+          },
+        },
+      },
+    };
+  }
+
   const supportsOpenAIReasoning =
     provider.includes('openai') ||
     provider.includes('xtoken') ||

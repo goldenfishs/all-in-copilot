@@ -1240,8 +1240,11 @@ export class ModelManagerViewProvider implements vscode.WebviewViewProvider {
       }
 
       if (provider.includes('deepseek') || id.startsWith('deepseek-')) {
-        if (id.includes('reasoner')) {
-          options.push({ value: 'enabled', label: '推理模型默认' });
+        if (id.startsWith('deepseek-v4')) {
+          options.push(
+            { value: 'high', label: '高' },
+            { value: 'max', label: '最高' }
+          );
         }
         return options;
       }
@@ -1421,12 +1424,14 @@ export class ModelManagerViewProvider implements vscode.WebviewViewProvider {
     }
 
     function inferDeepSeekDefaults(id) {
+      const v4 = id.includes('v4');
       return {
         family: 'deepseek',
-        contextLength: id.includes('v4') ? 1048576 : 64000,
+        contextLength: v4 ? 1048576 : 64000,
         maxOutputTokens: 8192,
         vision: false,
-        toolCalling: true
+        toolCalling: !id.includes('reasoner'),
+        reasoningEffort: v4 ? 'high' : undefined
       };
     }
 
@@ -1625,9 +1630,6 @@ export class ModelManagerViewProvider implements vscode.WebviewViewProvider {
     }
 
     function normalizeReasoningEffort(value) {
-      if (value === 'max') {
-        return 'xhigh';
-      }
       return value || '';
     }
 
@@ -1762,9 +1764,6 @@ function getNonce(): string {
 }
 
 function normalizeReasoningEffort(value: string | undefined): string | undefined {
-  if (value === 'max') {
-    return 'xhigh';
-  }
   return value;
 }
 

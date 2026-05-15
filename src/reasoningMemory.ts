@@ -4,6 +4,7 @@ import type { ResolvedModelConfig } from './types';
 
 const MAX_REASONING_ENTRIES = 200;
 const reasoningCache = new Map<string, string>();
+const reasoningPrefixCache = new Map<string, string>();
 
 export interface ReasoningCapture {
   reasoningContent?: string;
@@ -18,7 +19,8 @@ export class ReasoningTracker {
   consume(message: vscode.LanguageModelChatRequestMessage): string | undefined {
     const signature = signatureForMessage(message);
     const reasoning = shouldPreserveReasoningContent(this.model) && message.role === vscode.LanguageModelChatMessageRole.Assistant
-      ? reasoningCache.get(makeKey(this.model, this.prefixHash, signature))
+      ? reasoningCache.get(makeKey(this.model, this.prefixHash, signature)) ??
+        reasoningPrefixCache.get(makePrefixKey(this.model, this.prefixHash))
       : undefined;
 
     this.prefixHash = hashText(`${this.prefixHash}\u0000${signature}`);
@@ -36,6 +38,7 @@ export class ReasoningTracker {
     }
 
     reasoningCache.set(makeKey(this.model, this.prefixHash, capture.visibleSignature), reasoningContent);
+    reasoningPrefixCache.set(makePrefixKey(this.model, this.prefixHash), reasoningContent);
     pruneCache();
   }
 }
@@ -143,6 +146,10 @@ function makeKey(model: ResolvedModelConfig, prefixHash: string, visibleSignatur
   return `${model.registeredId}:${prefixHash}:${hashText(visibleSignature)}`;
 }
 
+function makePrefixKey(model: ResolvedModelConfig, prefixHash: string): string {
+  return `${model.registeredId}:${prefixHash}`;
+}
+
 function hashText(value: string): string {
   return crypto.createHash('sha256').update(value).digest('base64url');
 }
@@ -188,5 +195,13 @@ function pruneCache(): void {
       return;
     }
     reasoningCache.delete(oldest);
+  }
+
+  while (reasoningPrefixCache.size > MAX_REASONING_ENTRIES) {
+    const oldest = reasoningPrefixCache.keys().next().value as string | undefined;
+    if (!oldest) {
+      return;
+    }
+    reasoningPrefixCache.delete(oldest);
   }
 }

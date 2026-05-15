@@ -61,14 +61,25 @@ export function buildChatCompletionRequest(
   if (reasoningEffort) {
     request.reasoning_effort = reasoningEffort;
   }
+  if (isDeepSeekV4Model(model) && reasoningEffort) {
+    request.thinking = { type: 'enabled' };
+  }
 
   const toolConfig = convertTools(options);
   if (model.toolCalling && toolConfig.tools?.length) {
     request.tools = toolConfig.tools;
-    request.tool_choice = shouldRequireToolForWorkspaceRequest(messages)
-      ? 'required'
-      : toolConfig.tool_choice;
+    const toolChoice = selectToolChoice(model, messages, toolConfig.tool_choice);
+    if (toolChoice) {
+      request.tool_choice = toolChoice;
+    }
     request.messages = withToolUseGuidance(request.messages, toolConfig.tools);
+  }
+
+  if (isDeepSeekV4Model(model) && hasMissingDeepSeekThinkingReplay(request.messages)) {
+    delete request.reasoning_effort;
+    request.thinking = { type: 'disabled' };
+    request.messages = stripReasoningContent(request.messages);
+    logger.warn('Explicitly disabled DeepSeek V4 thinking for this request because prior tool-call reasoning_content is unavailable.');
   }
 
   if (model.extra) {
@@ -141,19 +152,34 @@ function normalizeReasoningEffort(value: string | undefined, model: ResolvedMode
     return undefined;
   }
 
-  const normalized = value.toLowerCase() === 'max' ? 'xhigh' : value.toLowerCase();
-  if (!isReasoningEffortSupported(model, normalized)) {
+  const normalized = value.toLowerCase();
+  if (isDeepSeekV4Model(model)) {
+    if (normalized === 'max' || normalized === 'xhigh') {
+      return 'max';
+    }
+    if (normalized === 'low' || normalized === 'medium' || normalized === 'high') {
+      return 'high';
+    }
     return undefined;
   }
 
-  return normalized;
+  const openAIStyle = normalized === 'max' ? 'xhigh' : normalized;
+  if (!isReasoningEffortSupported(model, openAIStyle)) {
+    return undefined;
+  }
+
+  return openAIStyle;
 }
 
 function isReasoningEffortSupported(model: ResolvedModelConfig, value: string): boolean {
   const provider = model.provider.toLowerCase();
   const id = model.id.toLowerCase();
 
-  if (provider.includes('deepseek') || provider.includes('gemini')) {
+  if (provider.includes('deepseek')) {
+    return isDeepSeekV4Model(model) && ['high', 'max'].includes(value);
+  }
+
+  if (provider.includes('gemini')) {
     return false;
   }
 
@@ -170,6 +196,55 @@ function isReasoningEffortSupported(model: ResolvedModelConfig, value: string): 
   }
 
   return ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(value);
+}
+
+function shouldSendToolChoice(model: ResolvedModelConfig): boolean {
+  return !isDeepSeekModel(model);
+}
+
+function selectToolChoice(
+  model: ResolvedModelConfig,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
+  fallback: OpenAIChatCompletionRequest['tool_choice'],
+): OpenAIChatCompletionRequest['tool_choice'] | undefined {
+  if (!shouldSendToolChoice(model)) {
+    return undefined;
+  }
+
+  return shouldRequireToolForWorkspaceRequest(messages)
+    ? 'required'
+    : fallback;
+}
+
+function isDeepSeekModel(model: ResolvedModelConfig): boolean {
+  const provider = model.provider.toLowerCase();
+  const id = model.id.toLowerCase();
+  return provider.includes('deepseek') || id.startsWith('deepseek-');
+}
+
+function isDeepSeekV4Model(model: ResolvedModelConfig): boolean {
+  const id = model.id.toLowerCase();
+  return isDeepSeekModel(model) && id.startsWith('deepseek-v4');
+}
+
+function hasMissingDeepSeekThinkingReplay(messages: OpenAIMessage[]): boolean {
+  return messages.some((message) =>
+    message.role === 'assistant' &&
+    Array.isArray(message.tool_calls) &&
+    message.tool_calls.length > 0 &&
+    !message.reasoning_content
+  );
+}
+
+function stripReasoningContent(messages: OpenAIMessage[]): OpenAIMessage[] {
+  return messages.map((message) => {
+    if (!message.reasoning_content) {
+      return message;
+    }
+
+    const { reasoning_content: _reasoningContent, ...rest } = message;
+    return rest;
+  });
 }
 
 export function buildHeaders(model: ResolvedModelConfig, apiKey: string): Record<string, string> {
@@ -227,7 +302,6 @@ export async function processChatCompletionStream(
         }
         if (data === '[DONE]') {
           stats.doneSignal = true;
-          flushToolCalls(toolCalls, progress, stats);
           streamFinished = true;
           break;
         }
@@ -426,9 +500,6 @@ function processChunk(
     stats.finishReason = finishReason;
   }
   if (!delta) {
-    if (shouldFlushToolCalls(finishReason)) {
-      flushToolCalls(toolCalls, progress, stats);
-    }
     return;
   }
 
@@ -494,9 +565,6 @@ function processChunk(
     stats.toolDeltaCount += 1;
   }
 
-  if (shouldFlushToolCalls(finishReason)) {
-    flushToolCalls(toolCalls, progress, stats);
-  }
 }
 
 function buildAssistantVisibleSignature(visibleText: string, toolCalls: Map<number, ToolCallBuffer>): string {
@@ -598,10 +666,6 @@ function appendToolNameDelta(previous: string | undefined, delta: string): strin
     return previous;
   }
   return `${previous}${delta}`;
-}
-
-function shouldFlushToolCalls(finishReason: string | undefined): boolean {
-  return finishReason === 'tool_calls' || finishReason === 'function_call' || finishReason === 'stop';
 }
 
 function flushToolCalls(

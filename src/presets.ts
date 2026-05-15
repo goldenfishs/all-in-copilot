@@ -79,10 +79,10 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     baseUrl: 'https://api.deepseek.com',
     custom: false,
     fallbackModels: [
-      { id: 'deepseek-v4-flash', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true },
-      { id: 'deepseek-v4-pro', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true },
+      { id: 'deepseek-v4-flash', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true, reasoningEffort: 'high' },
+      { id: 'deepseek-v4-pro', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true, reasoningEffort: 'high' },
       { id: 'deepseek-chat', family: 'deepseek', contextLength: 64000, maxOutputTokens: 8192, vision: false, toolCalling: true },
-      { id: 'deepseek-reasoner', family: 'deepseek', contextLength: 64000, maxOutputTokens: 8192, vision: false, toolCalling: true },
+      { id: 'deepseek-reasoner', family: 'deepseek', contextLength: 64000, maxOutputTokens: 8192, vision: false, toolCalling: false },
     ],
   },
   {
@@ -307,7 +307,8 @@ function inferDeepSeekDefaults(id: string): Partial<ModelConfig> {
     contextLength: v4 ? 1048576 : 64000,
     maxOutputTokens: 8192,
     vision: false,
-    toolCalling: true,
+    toolCalling: !id.includes('reasoner'),
+    reasoningEffort: v4 ? 'high' : undefined,
   };
 }
 

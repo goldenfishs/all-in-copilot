@@ -1,81 +1,105 @@
+<div align="center">
+
+<img src="media/icon.png" alt="All in Copilot Logo" width="112" height="112">
+
 # All in Copilot
 
-All in Copilot is a VS Code extension that lets you add OpenAI-compatible and Anthropic chat models to the VS Code chat model picker through a visual sidebar.
+**Bring OpenAI-compatible and Anthropic models into the VS Code Copilot Chat model picker.**
 
-> This project is not affiliated with, endorsed by, or sponsored by GitHub, OpenAI, Anthropic, or Microsoft. GitHub Copilot is a trademark of GitHub. This extension uses VS Code's public Language Model Provider APIs.
+Add providers, discover models, configure reasoning options, and use your own models from the native Copilot Chat workflow.
 
-## Features
+English | [简体中文](README.zh-CN.md)
 
-- Visual model manager in the Activity Bar
-- Add, edit, duplicate, delete, and clear model configurations
-- Discover models from OpenAI-compatible `/models` endpoints
-- Automatic `/v1` base URL handling during discovery and requests
-- Provider-specific API keys stored in VS Code SecretStorage
-- OpenAI-compatible Chat Completions streaming
-- Anthropic Messages streaming
-- Image input and tool-call conversion when supported by the configured model
-- Provider-aware defaults for GPT, Claude, DeepSeek, Gemini, xAI, and GLM-style models
-- Reasoning controls for compatible OpenAI-style models
-- Claude thinking budget configuration
-- DeepSeek V4 `reasoning_content` replay support for tool-call conversations
-- Output channel diagnostics for request and stream behavior
+</div>
 
-## Install for Development
+> All in Copilot is not affiliated with, endorsed by, or sponsored by GitHub, OpenAI, Anthropic, or Microsoft. This extension uses VS Code's Language Model Provider API. GitHub Copilot is a trademark of GitHub.
+
+## What it does
+
+- Shows your own models in the Copilot Chat model picker.
+- Add, edit, duplicate, and delete models from the sidebar.
+- Auto-discover models from `/models`.
+- Auto-detect whether Base URL needs `/v1`.
+- Store API keys per provider, not in `settings.json`.
+- Supports OpenAI-compatible and Anthropic protocols.
+
+## Who it's for
+
+If you already have any of these, this extension might fit:
+
+- Official OpenAI endpoints
+- OpenAI-compatible gateways
+- Claude / Anthropic API
+- DeepSeek, GLM, Gemini, xAI, or any compatible service
+
+## Quick Start
+
+### Requirements
+
+- VS Code 1.116 or later
+- GitHub Copilot Chat enabled
+- At least one API key
+
+### Install
 
 ```bash
 npm install
-npm run compile
-```
-
-Then open this folder in VS Code and run `Run Extension`.
-
-## Local VSIX
-
-```bash
 npm run package
+code --install-extension all-in-copilot-*.vsix
 ```
 
-This creates a `.vsix` package in the project root. Generated packages are ignored by Git.
-
-For local installation on macOS with the bundled script:
+On macOS, you can also run:
 
 ```bash
 ./install-local.sh
 ```
 
-## Usage
+### Usage
 
-1. Open the `All in Copilot` Activity Bar view.
-2. Pick a provider preset or enter a custom provider, Base URL, and API key.
-3. Click `获取模型列表` to discover models, or click `添加` to add one manually.
-4. Configure context length, max output, vision, tool calling, and reasoning options.
-5. Save the model.
-6. Select the model from the VS Code chat model picker.
+1. Open the **All in Copilot** sidebar in the Activity Bar.
+2. Pick a preset, or fill in your own provider, API type, and Base URL.
+3. Paste your API key.
+4. Click **获取模型列表** to discover models, or add one manually.
+5. Save, then select the model in Copilot Chat.
 
-## Configuration
+## Common Configurations
 
-Models are stored in VS Code settings under `all-in-copilot.models`.
+Model configs live in `all-in-copilot.models`. It's easier to use the sidebar, but here's what the JSON looks like.
+
+### OpenAI-compatible
 
 ```json
 {
   "all-in-copilot.models": [
     {
       "id": "gpt-5.5",
+      "apiType": "openai",
       "displayName": "gpt-5.5",
       "provider": "xtoken",
       "baseUrl": "https://api.example.com/v1",
+      "family": "gpt-5",
       "contextLength": 400000,
       "maxOutputTokens": 128000,
       "vision": true,
       "toolCalling": true,
       "reasoningEffort": "medium"
-    },
+    }
+  ]
+}
+```
+
+### Anthropic
+
+```json
+{
+  "all-in-copilot.models": [
     {
       "id": "claude-sonnet-4-20250514",
       "apiType": "anthropic",
       "displayName": "Claude Sonnet 4",
       "provider": "anthropic",
       "baseUrl": "https://api.anthropic.com",
+      "family": "claude",
       "contextLength": 200000,
       "maxOutputTokens": 64000,
       "vision": true,
@@ -86,52 +110,30 @@ Models are stored in VS Code settings under `all-in-copilot.models`.
 }
 ```
 
-Use `configId` to register the same API model more than once:
-
-```json
-{
-  "id": "gpt-5.5",
-  "configId": "fast",
-  "displayName": "gpt-5.5 Fast",
-  "reasoningEffort": "low"
-}
-```
-
 ## Commands
 
-- `All in Copilot: 打开模型管理器`
-- `All in Copilot: 设置默认 API Key`
-- `All in Copilot: 设置服务商 API Key`
-- `All in Copilot: 清除默认 API Key`
-- `All in Copilot: 打开设置`
-- `All in Copilot: 查看日志`
-
-## Project Structure
-
-- `src/extension.ts`: extension activation and command registration
-- `src/provider.ts`: VS Code language model provider
-- `src/modelView.ts`: sidebar model manager
-- `src/openai.ts`: OpenAI-compatible request and stream adapter
-- `src/anthropic.ts`: Anthropic Messages request and stream adapter
-- `src/adapters.ts`: protocol routing and model discovery
-- `src/config.ts`: settings normalization and model resolution
-- `src/presets.ts`: provider presets and model defaults
-- `src/auth.ts`: SecretStorage API key handling
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for more detail.
-
-## Publishing
-
-Before publishing to the VS Code Marketplace, change `publisher` in `package.json` from `local` to your Marketplace publisher ID.
-
-See [docs/PUBLISHING.md](docs/PUBLISHING.md).
+- `All in Copilot: 打开模型管理器` — Open the sidebar
+- `All in Copilot: 设置服务商 API Key` — Set a key for a specific provider
+- `All in Copilot: 打开设置` — Open extension settings
+- `All in Copilot: 查看日志` — Open the output channel
+- `All in Copilot: 设置默认 API Key` — Set the default API key
+- `All in Copilot: 清除默认 API Key` — Clear the default API key
 
 ## Security
 
-API keys are stored with VS Code SecretStorage. Do not put keys in `settings.json`, screenshots, issues, logs, or pull requests.
+API keys are stored in VS Code `SecretStorage`. Don't put them in `settings.json`, issues, logs, or screenshots.
 
-See [SECURITY.md](SECURITY.md).
+## Development
+
+```bash
+npm install
+npm run compile
+```
+
+Open the repo in VS Code and press **F5** to debug.
+
+More details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)

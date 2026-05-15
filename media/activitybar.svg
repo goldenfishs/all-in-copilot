@@ -1,0 +1,10 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 4.25V19.75" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M5.25 8.25L12 12L18.75 8.25" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5.25 15.75L12 12L18.75 15.75" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M9.25 12C9.25 10.48 10.48 9.25 12 9.25C13.52 9.25 14.75 10.48 14.75 12C14.75 13.52 13.52 14.75 12 14.75C10.48 14.75 9.25 13.52 9.25 12Z" stroke="currentColor" stroke-width="2.1"/>
+  <path d="M2.9 8.25C2.9 6.95 3.95 5.9 5.25 5.9C6.55 5.9 7.6 6.95 7.6 8.25C7.6 9.55 6.55 10.6 5.25 10.6C3.95 10.6 2.9 9.55 2.9 8.25Z" stroke="currentColor" stroke-width="2.1"/>
+  <path d="M16.4 8.25C16.4 6.95 17.45 5.9 18.75 5.9C20.05 5.9 21.1 6.95 21.1 8.25C21.1 9.55 20.05 10.6 18.75 10.6C17.45 10.6 16.4 9.55 16.4 8.25Z" stroke="currentColor" stroke-width="2.1"/>
+  <path d="M2.9 15.75C2.9 14.45 3.95 13.4 5.25 13.4C6.55 13.4 7.6 14.45 7.6 15.75C7.6 17.05 6.55 18.1 5.25 18.1C3.95 18.1 2.9 17.05 2.9 15.75Z" stroke="currentColor" stroke-width="2.1"/>
+  <path d="M16.4 15.75C16.4 14.45 17.45 13.4 18.75 13.4C20.05 13.4 21.1 14.45 21.1 15.75C21.1 17.05 20.05 18.1 18.75 18.1C17.45 18.1 16.4 17.05 16.4 15.75Z" stroke="currentColor" stroke-width="2.1"/>
+</svg>

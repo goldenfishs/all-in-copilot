@@ -2,10 +2,11 @@
   "name": "all-in-copilot",
   "displayName": "All in Copilot",
   "description": "Manage OpenAI-compatible and Anthropic chat models from the VS Code chat model picker.",
-  "version": "0.0.9",
+  "version": "0.0.12",
   "publisher": "local",
   "author": "goldenfishs",
   "license": "MIT",
+  "icon": "media/icon.png",
   "homepage": "https://github.com/goldenfishs/all-in-copilot#readme",
   "repository": {
     "type": "git",
@@ -79,7 +80,7 @@
         {
           "id": "all-in-copilot",
           "title": "All in Copilot",
-          "icon": "media/all-in-copilot.svg"
+          "icon": "media/activitybar.svg"
         }
       ]
     },
@@ -190,6 +191,7 @@
                   "low",
                   "medium",
                   "high",
+                  "max",
                   "xhigh"
                 ]
               },

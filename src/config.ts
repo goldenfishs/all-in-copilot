@@ -223,9 +223,6 @@ function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function normalizeReasoningEffort(value: string | undefined): string | undefined {
-  if (value === 'max') {
-    return 'xhigh';
-  }
   return value;
 }
 
