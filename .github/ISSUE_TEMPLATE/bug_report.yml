@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the configured provider type and model ID, but remove API keys.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant output after removing API keys and private URLs.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      placeholder: 0.0.9
+    validations:
+      required: true
+  - type: input
+    id: vscode
+    attributes:
+      label: VS Code version
+      placeholder: 1.116.0

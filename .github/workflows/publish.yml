@@ -1,0 +1,45 @@
+name: Publish VS Code Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release metadata
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PUBLISHER="$(node -p "require('./package.json').publisher")"
+
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag v$TAG_VERSION does not match package.json version $PACKAGE_VERSION."
+            exit 1
+          fi
+
+          if [ "$PUBLISHER" = "local" ]; then
+            echo "package.json publisher is still 'local'. Set it to your Marketplace publisher ID before publishing."
+            exit 1
+          fi
+
+      - name: Compile
+        run: npm run check
+
+      - name: Publish to VS Code Marketplace
+        run: npx vsce publish -p "${{ secrets.VSCE_PAT }}"

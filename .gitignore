@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+coverage/
+
+# VS Code local state
+.vscode-test/
+.codex-vscode/
+.backup-extensions/
+
+# Packaged extensions
+*.vsix
+
+# Local environment and secrets
+.env
+.env.*
+*.local
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log
