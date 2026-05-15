@@ -104,5 +104,8 @@ function getProviderKeyCandidates(provider: string | undefined): string[] {
   if (normalized !== 'custom' && normalized !== 'openai' && normalized !== 'anthropic') {
     aliases.add('custom');
   }
+  if (normalized.startsWith('custom-')) {
+    aliases.add('custom');
+  }
   return Array.from(aliases);
 }

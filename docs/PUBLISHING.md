@@ -14,7 +14,7 @@ Before publishing to the VS Code Marketplace, confirm these values:
 1. Create a publisher in the Visual Studio Marketplace publisher portal.
 2. Create an Azure DevOps Personal Access Token with `Marketplace: Manage`.
 3. Add the PAT to GitHub repository secrets as `VSCE_PAT`.
-4. Change `publisher` in `package.json` from `local` to your Marketplace publisher ID. If you create a Marketplace publisher named `goldenfishs`, use `"publisher": "goldenfishs"`.
+4. Confirm `package.json -> publisher` is the Marketplace publisher ID. This project currently uses `"publisher": "goldenfishs"`.
 
 ## Manual Publish
 
@@ -27,7 +27,7 @@ npx vsce publish -p <VSCE_PAT>
 
 ## Automated Publish
 
-The workflow in `.github/workflows/publish.yml` publishes when you push a tag like `v0.0.10`.
+The workflow in `.github/workflows/publish.yml` publishes when you push a tag like `v0.1.0`.
 The tag version must match `package.json -> version`, and `publisher` must be a real Marketplace publisher ID.
 
 ```bash
@@ -40,7 +40,6 @@ Do not publish the same version twice. VS Code Marketplace rejects duplicate ver
 
 ## Before First Public Release
 
-- Replace `publisher: "local"` with your publisher ID.
 - Confirm the GitHub repository URL is correct.
 - Review `README.md` for project name and trademark wording.
 - Confirm no local `.vsix`, `.codex-vscode`, `.backup-extensions`, or API keys are staged.

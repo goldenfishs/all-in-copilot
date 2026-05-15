@@ -22,112 +22,166 @@ export interface ProviderPreset {
   fallbackModels: ProviderPresetModel[];
 }
 
+const OPENAI_1M_CONTEXT = 1050000;
+const OPENAI_GPT41_CONTEXT = 1047576;
+const OPENAI_400K_CONTEXT = 400000;
+const O_SERIES_CONTEXT = 200000;
+const O_SERIES_OUTPUT = 100000;
+const CLAUDE_1M_CONTEXT = 1000000;
+const CLAUDE_200K_CONTEXT = 200000;
+const XAI_GROK_2M_CONTEXT = 2000000;
+const XAI_GROK_1M_CONTEXT = 1000000;
+const XAI_GROK_CODE_CONTEXT = 256000;
+const DEEPSEEK_1M_CONTEXT = 1048576;
+const DEEPSEEK_384K_OUTPUT = 393216;
+const GEMINI_1M_CONTEXT = 1048576;
+const KIMI_256K_CONTEXT = 262144;
+const KIMI_128K_CONTEXT = 131072;
+const MINIMAX_200K_CONTEXT = 204800;
+const GLM_200K_CONTEXT = 200000;
+const GLM_128K_CONTEXT = 128000;
+
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: 'openai',
-    label: 'OpenAI 官方',
+    label: 'OpenAI',
     provider: 'openai',
     apiType: 'openai',
     baseUrl: 'https://api.openai.com/v1',
     custom: false,
     fallbackModels: [
-      { id: 'gpt-5.5', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.4', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.4-mini', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.3-codex', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.3-codex-spark', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'low' },
-      { id: 'gpt-5.2', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.2-codex', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-5.1', family: 'gpt-5', contextLength: 400000, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gpt-4.1', family: 'gpt-4', contextLength: 1048576, maxOutputTokens: 32768, vision: true, toolCalling: true },
+      { id: 'gpt-5.5-pro', family: 'gpt-5', contextLength: OPENAI_1M_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.5', family: 'gpt-5', contextLength: OPENAI_1M_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.4', family: 'gpt-5', contextLength: OPENAI_1M_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.4-mini', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.3-codex', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.3-codex-spark', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'low' },
+      { id: 'gpt-5.2', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.2-codex', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-5.1', family: 'gpt-5', contextLength: OPENAI_400K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gpt-4.1', family: 'gpt-4', contextLength: OPENAI_GPT41_CONTEXT, maxOutputTokens: 32768, vision: true, toolCalling: true },
       { id: 'gpt-4o', family: 'gpt-4o', contextLength: 128000, maxOutputTokens: 16384, vision: true, toolCalling: true },
     ],
   },
   {
     id: 'anthropic',
-    label: 'Claude / Anthropic 官方',
+    label: 'Claude / Anthropic',
     provider: 'anthropic',
     apiType: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
     custom: false,
     fallbackModels: [
-      { id: 'claude-opus-4-1-20250805', family: 'claude', contextLength: 200000, maxOutputTokens: 32000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
-      { id: 'claude-opus-4-20250514', family: 'claude', contextLength: 200000, maxOutputTokens: 32000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
-      { id: 'claude-sonnet-4-20250514', family: 'claude', contextLength: 200000, maxOutputTokens: 64000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
-      { id: 'claude-3-7-sonnet-20250219', family: 'claude', contextLength: 200000, maxOutputTokens: 64000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
-      { id: 'claude-3-5-haiku-20241022', family: 'claude', contextLength: 200000, maxOutputTokens: 8192, vision: true, toolCalling: true },
+      { id: 'claude-opus-4-7', family: 'claude', contextLength: CLAUDE_1M_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-sonnet-4-6', family: 'claude', contextLength: CLAUDE_1M_CONTEXT, maxOutputTokens: 64000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-haiku-4-5', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 64000, vision: true, toolCalling: true },
+      { id: 'claude-opus-4-1-20250805', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 32000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-opus-4-20250514', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 32000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-sonnet-4-20250514', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 64000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-3-7-sonnet-20250219', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 64000, vision: true, toolCalling: true, thinkingBudgetTokens: 8192 },
+      { id: 'claude-3-5-haiku-20241022', family: 'claude', contextLength: CLAUDE_200K_CONTEXT, maxOutputTokens: 8192, vision: true, toolCalling: true },
     ],
   },
   {
     id: 'xai',
-    label: 'xAI 官方',
+    label: 'xAI',
     provider: 'xai',
     apiType: 'openai',
     baseUrl: 'https://api.x.ai/v1',
     custom: false,
     fallbackModels: [
-      { id: 'grok-4.20-reasoning', family: 'grok', contextLength: 256000, maxOutputTokens: 32768, vision: false, toolCalling: true },
-      { id: 'grok-4.3', family: 'grok', contextLength: 256000, maxOutputTokens: 32768, vision: true, toolCalling: true },
-      { id: 'grok-code-fast-1', family: 'grok', contextLength: 256000, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'grok-4.20-reasoning', family: 'grok', contextLength: XAI_GROK_2M_CONTEXT, maxOutputTokens: 131072, vision: false, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'grok-4.3', family: 'grok', contextLength: XAI_GROK_1M_CONTEXT, maxOutputTokens: 131072, vision: true, toolCalling: true },
+      { id: 'grok-code-fast-1', family: 'grok', contextLength: XAI_GROK_CODE_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
     ],
   },
   {
     id: 'deepseek',
-    label: 'DeepSeek 官方',
+    label: 'DeepSeek',
     provider: 'deepseek',
     apiType: 'openai',
     baseUrl: 'https://api.deepseek.com',
     custom: false,
     fallbackModels: [
-      { id: 'deepseek-v4-flash', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true, reasoningEffort: 'high' },
-      { id: 'deepseek-v4-pro', family: 'deepseek', contextLength: 1048576, maxOutputTokens: 8192, vision: false, toolCalling: true, reasoningEffort: 'high' },
+      { id: 'deepseek-v4-flash', family: 'deepseek', contextLength: DEEPSEEK_1M_CONTEXT, maxOutputTokens: DEEPSEEK_384K_OUTPUT, vision: false, toolCalling: true, reasoningEffort: 'high' },
+      { id: 'deepseek-v4-pro', family: 'deepseek', contextLength: DEEPSEEK_1M_CONTEXT, maxOutputTokens: DEEPSEEK_384K_OUTPUT, vision: false, toolCalling: true, reasoningEffort: 'high' },
       { id: 'deepseek-chat', family: 'deepseek', contextLength: 64000, maxOutputTokens: 8192, vision: false, toolCalling: true },
       { id: 'deepseek-reasoner', family: 'deepseek', contextLength: 64000, maxOutputTokens: 8192, vision: false, toolCalling: false },
     ],
   },
   {
     id: 'gemini',
-    label: 'Gemini 官方',
+    label: 'Gemini',
     provider: 'gemini',
     apiType: 'openai',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     custom: false,
     fallbackModels: [
-      { id: 'gemini-3-pro-preview', family: 'gemini', contextLength: 1048576, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gemini-3-flash-preview', family: 'gemini', contextLength: 1048576, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gemini-2.5-pro', family: 'gemini', contextLength: 1048576, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
-      { id: 'gemini-2.5-flash', family: 'gemini', contextLength: 1048576, maxOutputTokens: 65536, vision: true, toolCalling: true },
+      { id: 'gemini-3.1-pro-preview', family: 'gemini', contextLength: GEMINI_1M_CONTEXT, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gemini-3-pro-preview', family: 'gemini', contextLength: GEMINI_1M_CONTEXT, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gemini-3-flash-preview', family: 'gemini', contextLength: GEMINI_1M_CONTEXT, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gemini-2.5-pro', family: 'gemini', contextLength: GEMINI_1M_CONTEXT, maxOutputTokens: 65536, vision: true, toolCalling: true, reasoningEffort: 'medium' },
+      { id: 'gemini-2.5-flash', family: 'gemini', contextLength: GEMINI_1M_CONTEXT, maxOutputTokens: 65536, vision: true, toolCalling: true },
+    ],
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi / Moonshot',
+    provider: 'kimi',
+    apiType: 'openai',
+    baseUrl: 'https://api.moonshot.ai/v1',
+    custom: false,
+    fallbackModels: [
+      { id: 'kimi-k2.6', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: true, toolCalling: true },
+      { id: 'kimi-k2.5', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: true, toolCalling: true },
+      { id: 'kimi-k2-thinking', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'kimi-k2-thinking-turbo', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'kimi-k2-0905-preview', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'kimi-k2-turbo-preview', family: 'kimi', contextLength: KIMI_256K_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'kimi-k2-0711-preview', family: 'kimi', contextLength: KIMI_128K_CONTEXT, maxOutputTokens: 32768, vision: false, toolCalling: true },
+      { id: 'moonshot-v1-128k', family: 'kimi', contextLength: KIMI_128K_CONTEXT, maxOutputTokens: 8192, vision: false, toolCalling: true },
+      { id: 'moonshot-v1-128k-vision-preview', family: 'kimi', contextLength: KIMI_128K_CONTEXT, maxOutputTokens: 8192, vision: true, toolCalling: true },
+    ],
+  },
+  {
+    id: 'minimax',
+    label: 'MiniMax',
+    provider: 'minimax',
+    apiType: 'openai',
+    baseUrl: 'https://api.minimax.io/v1',
+    custom: false,
+    fallbackModels: [
+      { id: 'MiniMax-M2.7', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2.7-highspeed', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2.5', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2.5-highspeed', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2.1', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2.1-highspeed', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'MiniMax-M2', family: 'minimax', contextLength: MINIMAX_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
     ],
   },
   {
     id: 'zai',
-    label: 'GLM / Z.AI 官方',
+    label: 'GLM / Z.AI',
     provider: 'zai',
     apiType: 'openai',
     baseUrl: 'https://api.z.ai/api/paas/v4',
     custom: false,
     fallbackModels: [
-      { id: 'glm-5.1', family: 'glm', contextLength: 128000, maxOutputTokens: 8192, vision: false, toolCalling: true },
-      { id: 'glm-4.7', family: 'glm', contextLength: 128000, maxOutputTokens: 8192, vision: false, toolCalling: true },
-      { id: 'glm-4.6', family: 'glm', contextLength: 128000, maxOutputTokens: 8192, vision: false, toolCalling: true },
-      { id: 'glm-4.6v', family: 'glm', contextLength: 128000, maxOutputTokens: 8192, vision: true, toolCalling: true },
+      { id: 'glm-5.1', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'glm-5', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'glm-5-turbo', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'glm-5v-turbo', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true },
+      { id: 'glm-4.7', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'glm-4.6', family: 'glm', contextLength: GLM_200K_CONTEXT, maxOutputTokens: 128000, vision: false, toolCalling: true },
+      { id: 'glm-4.6v', family: 'glm', contextLength: GLM_128K_CONTEXT, maxOutputTokens: 128000, vision: true, toolCalling: true },
     ],
   },
   {
     id: 'custom-openai',
-    label: '通用 OpenAI Compatible',
+    label: '自定义 Custom',
     provider: 'custom',
     apiType: 'openai',
     baseUrl: 'https://api.openai.com/v1',
-    custom: true,
-    fallbackModels: [],
-  },
-  {
-    id: 'custom-anthropic',
-    label: '通用 Anthropic Messages',
-    provider: 'custom-anthropic',
-    apiType: 'anthropic',
-    baseUrl: 'https://api.anthropic.com',
     custom: true,
     fallbackModels: [],
   },
@@ -172,8 +226,12 @@ export function applyModelDefaults(model: ModelConfig): ModelConfig {
     ...defaults,
     ...model,
     family: model.family ?? defaults.family,
-    contextLength: model.contextLength ?? defaults.contextLength,
-    maxOutputTokens: model.maxOutputTokens ?? defaults.maxOutputTokens,
+    contextLength: shouldRefreshKnownDefault(model, 'contextLength', model.contextLength, defaults.contextLength)
+      ? defaults.contextLength
+      : model.contextLength ?? defaults.contextLength,
+    maxOutputTokens: shouldRefreshKnownDefault(model, 'maxOutputTokens', model.maxOutputTokens, defaults.maxOutputTokens)
+      ? defaults.maxOutputTokens
+      : model.maxOutputTokens ?? defaults.maxOutputTokens,
     vision: model.vision ?? defaults.vision,
     toolCalling: model.toolCalling ?? defaults.toolCalling,
     reasoningEffort: model.reasoningEffort ?? defaults.reasoningEffort,
@@ -202,6 +260,14 @@ export function inferModelDefaults(model: Pick<ModelConfig, 'id' | 'apiType' | '
     return inferGeminiDefaults(id);
   }
 
+  if (provider.includes('kimi') || provider.includes('moonshot') || id.startsWith('kimi-') || id.startsWith('moonshot-')) {
+    return inferKimiDefaults(id);
+  }
+
+  if (provider.includes('minimax') || id.toLowerCase().startsWith('minimax-')) {
+    return inferMiniMaxDefaults(id);
+  }
+
   if (provider === 'openai' || id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) {
     return inferOpenAIDefaults(id);
   }
@@ -209,8 +275,8 @@ export function inferModelDefaults(model: Pick<ModelConfig, 'id' | 'apiType' | '
   if (provider.includes('xai') || provider.includes('grok') || id.startsWith('grok-')) {
     return {
       family: 'grok',
-      contextLength: 256000,
-      maxOutputTokens: 32768,
+      contextLength: inferGrokContextLength(id),
+      maxOutputTokens: id.includes('code-fast') ? 32768 : 131072,
       vision: !id.includes('code-fast') && !id.includes('reasoning'),
       toolCalling: true,
       reasoningEffort: id.includes('reasoning') ? 'medium' : undefined,
@@ -218,9 +284,18 @@ export function inferModelDefaults(model: Pick<ModelConfig, 'id' | 'apiType' | '
   }
 
   if (provider.includes('zai') || provider.includes('glm') || id.startsWith('glm-')) {
+    if (id.startsWith('glm-5') || id.startsWith('glm-4.7') || id.startsWith('glm-4.6')) {
+      return {
+        family: 'glm',
+        contextLength: id.includes('4.6v') ? GLM_128K_CONTEXT : GLM_200K_CONTEXT,
+        maxOutputTokens: 128000,
+        vision: id.includes('v'),
+        toolCalling: true,
+      };
+    }
     return {
       family: 'glm',
-      contextLength: 128000,
+      contextLength: GLM_128K_CONTEXT,
       maxOutputTokens: 8192,
       vision: id.includes('v'),
       toolCalling: true,
@@ -258,11 +333,22 @@ function findPresetModel(
 }
 
 function inferOpenAIDefaults(id: string): Partial<ModelConfig> {
-  if (id.startsWith('gpt-5') || /^o[134]/.test(id)) {
+  if (id.startsWith('gpt-5')) {
     return {
       family: id.includes('codex') ? 'gpt-5-codex' : 'gpt-5',
-      contextLength: 400000,
+      contextLength: inferGpt5ContextLength(id),
       maxOutputTokens: 128000,
+      vision: true,
+      toolCalling: true,
+      reasoningEffort: 'medium',
+    };
+  }
+
+  if (/^o[134]/.test(id)) {
+    return {
+      family: 'openai-reasoning',
+      contextLength: O_SERIES_CONTEXT,
+      maxOutputTokens: O_SERIES_OUTPUT,
       vision: true,
       toolCalling: true,
       reasoningEffort: 'medium',
@@ -272,7 +358,7 @@ function inferOpenAIDefaults(id: string): Partial<ModelConfig> {
   if (id.startsWith('gpt-4.1')) {
     return {
       family: 'gpt-4',
-      contextLength: 1048576,
+      contextLength: OPENAI_GPT41_CONTEXT,
       maxOutputTokens: 32768,
       vision: true,
       toolCalling: true,
@@ -292,8 +378,8 @@ function inferClaudeDefaults(id: string): Partial<ModelConfig> {
   const supportsThinking = id.includes('opus-4') || id.includes('sonnet-4') || id.includes('3-7-sonnet');
   return {
     family: 'claude',
-    contextLength: 200000,
-    maxOutputTokens: id.includes('haiku') ? 8192 : id.includes('sonnet') ? 64000 : 32000,
+    contextLength: inferClaudeContextLength(id),
+    maxOutputTokens: inferClaudeMaxOutputTokens(id),
     vision: true,
     toolCalling: true,
     thinkingBudgetTokens: supportsThinking ? 8192 : undefined,
@@ -301,24 +387,121 @@ function inferClaudeDefaults(id: string): Partial<ModelConfig> {
 }
 
 function inferDeepSeekDefaults(id: string): Partial<ModelConfig> {
-  const v4 = id.includes('v4');
+  const currentV4 = id.includes('v4');
   return {
     family: 'deepseek',
-    contextLength: v4 ? 1048576 : 64000,
-    maxOutputTokens: 8192,
+    contextLength: currentV4 ? DEEPSEEK_1M_CONTEXT : 64000,
+    maxOutputTokens: currentV4 ? DEEPSEEK_384K_OUTPUT : 8192,
     vision: false,
     toolCalling: !id.includes('reasoner'),
-    reasoningEffort: v4 ? 'high' : undefined,
+    reasoningEffort: currentV4 ? 'high' : undefined,
   };
 }
 
 function inferGeminiDefaults(id: string): Partial<ModelConfig> {
   return {
     family: 'gemini',
-    contextLength: 1048576,
+    contextLength: GEMINI_1M_CONTEXT,
     maxOutputTokens: 65536,
     vision: true,
     toolCalling: true,
     reasoningEffort: id.includes('pro') || id.includes('flash') ? 'medium' : undefined,
   };
+}
+
+function inferKimiDefaults(id: string): Partial<ModelConfig> {
+  return {
+    family: 'kimi',
+    contextLength: id.includes('128k') || id.includes('0711') ? KIMI_128K_CONTEXT : KIMI_256K_CONTEXT,
+    maxOutputTokens: id.startsWith('moonshot-') ? 8192 : 32768,
+    vision: id.includes('vision') || id === 'kimi-k2.5' || id === 'kimi-k2.6',
+    toolCalling: true,
+  };
+}
+
+function inferMiniMaxDefaults(_id: string): Partial<ModelConfig> {
+  return {
+    family: 'minimax',
+    contextLength: MINIMAX_200K_CONTEXT,
+    maxOutputTokens: 128000,
+    vision: false,
+    toolCalling: true,
+  };
+}
+
+function inferGpt5ContextLength(id: string): number {
+  if (id.startsWith('gpt-5.5') || (id.startsWith('gpt-5.4') && !id.startsWith('gpt-5.4-mini'))) {
+    return OPENAI_1M_CONTEXT;
+  }
+  return OPENAI_400K_CONTEXT;
+}
+
+function inferClaudeContextLength(id: string): number {
+  if (id.includes('opus-4-7') || id.includes('opus-4-6') || id.includes('sonnet-4-6')) {
+    return CLAUDE_1M_CONTEXT;
+  }
+  return CLAUDE_200K_CONTEXT;
+}
+
+function inferClaudeMaxOutputTokens(id: string): number {
+  if (id.includes('opus-4-7') || id.includes('opus-4-6')) {
+    return 128000;
+  }
+  if (id.includes('sonnet') || id.includes('haiku-4-5')) {
+    return 64000;
+  }
+  if (id.includes('haiku')) {
+    return 8192;
+  }
+  return 32000;
+}
+
+function inferGrokContextLength(id: string): number {
+  if (id.includes('4.20')) {
+    return XAI_GROK_2M_CONTEXT;
+  }
+  if (id.includes('code-fast')) {
+    return XAI_GROK_CODE_CONTEXT;
+  }
+  return XAI_GROK_1M_CONTEXT;
+}
+
+function shouldRefreshKnownDefault(
+  model: Pick<ModelConfig, 'id' | 'provider' | 'apiType'>,
+  field: 'contextLength' | 'maxOutputTokens',
+  currentValue: number | undefined,
+  defaultValue: number | undefined,
+): boolean {
+  if (typeof currentValue !== 'number' || typeof defaultValue !== 'number' || currentValue === defaultValue) {
+    return false;
+  }
+
+  const id = model.id.toLowerCase();
+  if (field === 'contextLength') {
+    return isKnownStaleContextLength(id, currentValue);
+  }
+  return isKnownStaleMaxOutputTokens(id, currentValue);
+}
+
+function isKnownStaleContextLength(id: string, value: number): boolean {
+  if ((id.startsWith('gpt-5.5') || id.startsWith('gpt-5.4')) && [1048576, 400000].includes(value)) {
+    return true;
+  }
+  if (id.startsWith('gpt-4.1') && value === 1048576) {
+    return true;
+  }
+  if ((id.includes('opus-4-7') || id.includes('opus-4-6') || id.includes('sonnet-4-6')) && value === 200000) {
+    return true;
+  }
+  if (id.includes('grok-4.20') && [256000, 1048576].includes(value)) {
+    return true;
+  }
+  if (id.includes('grok-4.3') && value === 256000) {
+    return true;
+  }
+  return false;
+}
+
+function isKnownStaleMaxOutputTokens(id: string, value: number): boolean {
+  return false;
 }

@@ -5,6 +5,7 @@
 .vscode-test/**
 node_modules/**
 src/**
+media/publisher-logo.png
 
 .DS_Store
 .editorconfig

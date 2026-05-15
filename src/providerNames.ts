@@ -1,10 +1,10 @@
 export function resolveProviderName(provider: string | undefined, baseUrl: string | undefined): string | undefined {
   const configured = provider?.trim();
-  if (configured && configured !== 'custom' && configured !== 'custom-anthropic') {
+  if (configured) {
     return normalizeProviderName(configured);
   }
 
-  return inferProviderFromBaseUrl(baseUrl || '') || configured;
+  return inferProviderFromBaseUrl(baseUrl || '');
 }
 
 export function inferProviderFromBaseUrl(baseUrl: string): string | undefined {
@@ -33,6 +33,14 @@ export function normalizeProviderName(value: string | undefined): string | undef
 
   if (normalized === 'xtokenmirror') {
     return 'xtoken';
+  }
+
+  if (normalized === 'moonshot') {
+    return 'kimi';
+  }
+
+  if (normalized === 'minimaxi') {
+    return 'minimax';
   }
 
   return normalized;

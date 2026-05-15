@@ -33,6 +33,8 @@ type ModelConfigurationOptions = vscode.ProvideLanguageModelChatResponseOptions 
   readonly configuration?: Record<string, unknown>;
 }
 
+const GEMINI_THOUGHT_SIGNATURE_BYPASS = 'skip_thought_signature_validator';
+
 export function buildChatCompletionRequest(
   model: ResolvedModelConfig,
   messages: readonly vscode.LanguageModelChatRequestMessage[],
@@ -41,7 +43,7 @@ export function buildChatCompletionRequest(
 ): OpenAIChatCompletionRequest {
   const request: OpenAIChatCompletionRequest = {
     model: model.id,
-    messages: convertMessages(messages, reasoningTracker),
+    messages: convertMessages(messages, reasoningTracker, model),
     stream: true,
     stream_options: {
       include_usage: true,
@@ -278,6 +280,14 @@ export async function processChatCompletionStream(
     emittedToolCalls: 0,
     doneSignal: false,
   };
+  const textToolCallExtractor = new TextToolCallExtractor(
+    progress,
+    toolCalls,
+    stats,
+    (delta) => {
+      visibleText += delta;
+    },
+  );
 
   try {
     while (!token.isCancellationRequested && !streamFinished) {
@@ -320,7 +330,7 @@ export async function processChatCompletionStream(
           progress,
           stats,
           (delta) => {
-            visibleText += delta;
+            textToolCallExtractor.accept(delta);
           },
           (delta) => {
             reasoningContent += delta;
@@ -332,6 +342,7 @@ export async function processChatCompletionStream(
     reader.releaseLock();
   }
 
+  textToolCallExtractor.finish();
   reasoningTracker.remember({
     reasoningContent,
     visibleSignature: buildAssistantVisibleSignature(visibleText, toolCalls),
@@ -343,8 +354,11 @@ export async function processChatCompletionStream(
 function convertMessages(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
   reasoningTracker: ReasoningTracker,
+  model: ResolvedModelConfig,
 ): OpenAIMessage[] {
   const converted: OpenAIMessage[] = [];
+  const toolCallNames = new Map<string, string>();
+  const geminiCompatibility = shouldUseGeminiOpenAICompatibility(model);
 
   for (const message of messages) {
     const role = mapRole(message);
@@ -366,23 +380,40 @@ function convertMessages(
       }
 
       if (part instanceof vscode.LanguageModelToolCallPart) {
-        toolCalls.push({
-          id: part.callId || createToolCallId(),
+        const callId = part.callId || createToolCallId();
+        const toolCall: OpenAIToolCall = {
+          id: callId,
           type: 'function',
           function: {
             name: part.name,
             arguments: stringifyToolInput(part.input),
           },
-        });
+        };
+        if (geminiCompatibility) {
+          toolCall.extra_content = {
+            google: {
+              thought_signature: GEMINI_THOUGHT_SIGNATURE_BYPASS,
+            },
+          };
+        }
+        toolCalls.push(toolCall);
+        toolCallNames.set(callId, part.name);
         continue;
       }
 
       if (isToolResultPart(part)) {
-        toolResults.push({
+        const toolMessage: OpenAIMessage = {
           role: 'tool',
           tool_call_id: part.callId,
           content: collectToolResultText(part.content),
-        });
+        };
+        if (geminiCompatibility) {
+          const name = toolCallNames.get(part.callId);
+          if (name) {
+            toolMessage.name = name;
+          }
+        }
+        toolResults.push(toolMessage);
       }
     }
 
@@ -403,6 +434,9 @@ function convertMessages(
 
       if (toolCalls.length > 0) {
         assistantMessage.tool_calls = toolCalls;
+        if (!assistantMessage.content) {
+          assistantMessage.content = null;
+        }
       }
 
       if (assistantMessage.content || assistantMessage.tool_calls) {
@@ -479,6 +513,16 @@ function convertTools(options: vscode.ProvideLanguageModelChatResponseOptions): 
   };
 }
 
+function shouldUseGeminiOpenAICompatibility(model: ResolvedModelConfig): boolean {
+  const provider = model.provider.toLowerCase();
+  const id = model.id.toLowerCase();
+  const baseUrl = model.baseUrl.toLowerCase();
+  return provider.includes('gemini') ||
+    provider.includes('google') ||
+    id.startsWith('gemini-') ||
+    baseUrl.includes('generativelanguage.googleapis.com');
+}
+
 function processChunk(
   chunk: Record<string, unknown>,
   toolCalls: Map<number, ToolCallBuffer>,
@@ -505,8 +549,6 @@ function processChunk(
 
   const content = readContentDelta(delta.content);
   if (typeof content === 'string' && content.length > 0) {
-    progress.report(new vscode.LanguageModelTextPart(content));
-    stats.textChars += content.length;
     onTextDelta(content);
   }
 
@@ -565,6 +607,203 @@ function processChunk(
     stats.toolDeltaCount += 1;
   }
 
+}
+
+class TextToolCallExtractor {
+  private buffer = '';
+
+  constructor(
+    private readonly progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    private readonly toolCalls: Map<number, ToolCallBuffer>,
+    private readonly stats: StreamStats,
+    private readonly onVisibleText: (delta: string) => void,
+  ) {}
+
+  accept(delta: string): void {
+    this.buffer += delta;
+    this.drain(false);
+  }
+
+  finish(): void {
+    this.drain(true);
+    this.flushText(this.buffer);
+    this.buffer = '';
+  }
+
+  private drain(final: boolean): void {
+    while (this.buffer.length > 0) {
+      const tagStart = findTextToolTagStart(this.buffer);
+      if (tagStart < 0) {
+        const keep = final ? 0 : trailingTextToolPrefixLength(this.buffer);
+        const flushLength = this.buffer.length - keep;
+        if (flushLength <= 0) {
+          return;
+        }
+        this.flushText(this.buffer.slice(0, flushLength));
+        this.buffer = this.buffer.slice(flushLength);
+        return;
+      }
+
+      if (tagStart > 0) {
+        this.flushText(this.buffer.slice(0, tagStart));
+        this.buffer = this.buffer.slice(tagStart);
+        continue;
+      }
+
+      const openTag = this.buffer.match(/^<tool_calls?\b[^>]*>/i)?.[0];
+      if (!openTag) {
+        if (final) {
+          this.flushText(this.buffer);
+          this.buffer = '';
+        }
+        return;
+      }
+
+      const tagName = /^<tool_calls\b/i.test(openTag) ? 'tool_calls' : 'tool_call';
+      const closeTag = `</${tagName}>`;
+      const closeIndex = this.buffer.toLowerCase().indexOf(closeTag, openTag.length);
+      if (closeIndex < 0) {
+        if (final) {
+          this.flushText(this.buffer);
+          this.buffer = '';
+        }
+        return;
+      }
+
+      const rawPayload = this.buffer.slice(openTag.length, closeIndex);
+      const rawBlock = this.buffer.slice(0, closeIndex + closeTag.length);
+      const parsedCalls = parseTextToolCallPayload(rawPayload);
+      if (parsedCalls.length === 0) {
+        this.flushText(rawBlock);
+      } else {
+        for (const parsedCall of parsedCalls) {
+          this.emitToolCall(parsedCall);
+        }
+      }
+      this.buffer = this.buffer.slice(closeIndex + closeTag.length);
+    }
+  }
+
+  private flushText(text: string): void {
+    if (!text) {
+      return;
+    }
+    this.progress.report(new vscode.LanguageModelTextPart(text));
+    this.stats.textChars += text.length;
+    this.onVisibleText(text);
+  }
+
+  private emitToolCall(toolCall: ToolCallBuffer): void {
+    const index = nextToolCallIndex(this.toolCalls);
+    const id = toolCall.id || createToolCallId();
+    const input = parseToolArguments(toolCall.arguments);
+    this.progress.report(new vscode.LanguageModelToolCallPart(id, toolCall.name ?? '', input));
+    this.toolCalls.set(index, {
+      id,
+      name: toolCall.name,
+      arguments: toolCall.arguments,
+      emitted: true,
+    });
+    this.stats.toolDeltaCount += 1;
+    this.stats.emittedToolCalls += 1;
+  }
+}
+
+function findTextToolTagStart(value: string): number {
+  const lower = value.toLowerCase();
+  const callIndex = lower.indexOf('<tool_call');
+  const callsIndex = lower.indexOf('<tool_calls');
+  if (callIndex < 0) {
+    return callsIndex;
+  }
+  if (callsIndex < 0) {
+    return callIndex;
+  }
+  return Math.min(callIndex, callsIndex);
+}
+
+function trailingTextToolPrefixLength(value: string): number {
+  const lower = value.toLowerCase();
+  const prefixes = ['<tool_call', '<tool_calls'];
+  let keep = 0;
+  for (const prefix of prefixes) {
+    for (let length = 1; length < prefix.length; length += 1) {
+      if (lower.endsWith(prefix.slice(0, length))) {
+        keep = Math.max(keep, length);
+      }
+    }
+  }
+  return keep;
+}
+
+function parseTextToolCallPayload(payload: string): ToolCallBuffer[] {
+  const normalized = unwrapTextToolCallPayload(payload);
+  if (!normalized) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalized);
+  } catch {
+    return [];
+  }
+
+  return collectTextToolCalls(parsed);
+}
+
+function unwrapTextToolCallPayload(payload: string): string {
+  const trimmed = payload.trim();
+  const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return (fence ? fence[1] : trimmed).trim();
+}
+
+function collectTextToolCalls(value: unknown): ToolCallBuffer[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectTextToolCalls(item));
+  }
+
+  const record = readRecord(value);
+  if (!record) {
+    return [];
+  }
+
+  if (Array.isArray(record.tool_calls)) {
+    return record.tool_calls.flatMap((item) => collectTextToolCalls(item));
+  }
+
+  const directName = readString(record.name) ?? readString(record.tool_name);
+  if (directName) {
+    return [{
+      id: readString(record.id),
+      name: directName,
+      arguments: normalizeTextToolArguments(record.arguments ?? record.input ?? record.args),
+    }];
+  }
+
+  const functionRecord = readRecord(record.function);
+  const functionName = readString(functionRecord?.name);
+  if (functionName) {
+    return [{
+      id: readString(record.id),
+      name: functionName,
+      arguments: normalizeTextToolArguments(functionRecord?.arguments ?? functionRecord?.input),
+    }];
+  }
+
+  return [];
+}
+
+function normalizeTextToolArguments(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return stringifyToolInput(value ?? {});
+}
+
+function nextToolCallIndex(toolCalls: Map<number, ToolCallBuffer>): number {
+  const indexes = Array.from(toolCalls.keys());
+  return indexes.length ? Math.max(...indexes) + 1 : 0;
 }
 
 function buildAssistantVisibleSignature(visibleText: string, toolCalls: Map<number, ToolCallBuffer>): string {

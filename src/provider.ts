@@ -4,6 +4,7 @@ import { AuthManager } from './auth';
 import { getProviderKeys, getResolvedModels, getModelByRegisteredId } from './config';
 import { logger } from './logger';
 import type { ResolvedModelConfig } from './types';
+import { resolveImagesForTextModel } from './vision';
 
 type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
   readonly isUserSelectable: boolean;
@@ -85,7 +86,8 @@ export class AllInCopilotProvider implements vscode.LanguageModelChatProvider {
       throw new Error(`No API key configured for ${model.provider}. Run "All in Copilot: Set Provider API Key".`);
     }
 
-    const prepared = prepareProviderRequest(model, messages, options, apiKey);
+    const visionResolution = await resolveImagesForTextModel(model, messages, token);
+    const prepared = prepareProviderRequest(model, visionResolution.messages, options, apiKey);
 
     const requestTools = Array.isArray(prepared.body.tools) ? prepared.body.tools : [];
     logger.info('Request start.', {
@@ -93,11 +95,14 @@ export class AllInCopilotProvider implements vscode.LanguageModelChatProvider {
       provider: model.provider,
       apiType: model.apiType,
       url: prepared.url,
-      messageCount: messages.length,
+      messageCount: visionResolution.messages.length,
       suppliedToolCount: options.tools?.length ?? 0,
       requestToolCount: requestTools.length,
       toolMode: options.toolMode,
       toolChoice: prepared.body.tool_choice,
+      visionProxy: visionResolution.visionModelId,
+      describedImages: visionResolution.describedImages,
+      unavailableImages: visionResolution.unavailableImages,
     });
 
     let response = await fetch(prepared.url, {
@@ -177,7 +182,7 @@ function toChatInfo(model: ResolvedModelConfig, hasApiKey: boolean): ModelPicker
     isUserSelectable: true,
     capabilities: {
       toolCalling: model.toolCalling,
-      imageInput: model.vision,
+      imageInput: true,
     },
     ...buildConfigurationSchema(model),
   };

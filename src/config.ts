@@ -177,13 +177,22 @@ function legacyRegisteredId(model: ResolvedModelConfig): string {
 }
 
 function getApiType(value: unknown): ApiType | undefined {
-  if (value === 'anthropic') {
-    return 'anthropic';
+  switch (value) {
+    case 'openai':
+    case 'openai-compatible':
+      return 'openai';
+    case 'openai-responses':
+    case 'responses':
+      return 'openai-responses';
+    case 'anthropic':
+    case 'claude':
+      return 'anthropic';
+    case 'gemini':
+    case 'google-gemini':
+      return 'gemini';
+    default:
+      return undefined;
   }
-  if (value === 'openai' || value === 'openai-compatible') {
-    return 'openai';
-  }
-  return undefined;
 }
 
 function getString(value: unknown): string | undefined {

@@ -1,4 +1,4 @@
-export type ApiType = 'openai' | 'anthropic';
+export type ApiType = 'openai' | 'openai-responses' | 'anthropic' | 'gemini';
 
 export interface ModelConfig {
   id: string;
@@ -41,6 +41,11 @@ export interface OpenAIToolCall {
     name: string;
     arguments: string;
   };
+  extra_content?: {
+    google?: {
+      thought_signature?: string;
+    };
+  };
 }
 
 export interface OpenAIFunctionTool {
@@ -63,6 +68,7 @@ export interface OpenAIContentPart {
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string | OpenAIContentPart[] | null;
+  name?: string;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
   reasoning_content?: string;
