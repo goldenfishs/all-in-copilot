@@ -3,7 +3,9 @@ import { prepareProviderRequest } from './adapters';
 import { AuthManager } from './auth';
 import { getProviderKeys, getResolvedModels, getModelByRegisteredId } from './config';
 import { logger } from './logger';
+import { summarizeMessageParts } from './messageParts';
 import type { ResolvedModelConfig } from './types';
+import { estimateMessageTokenCount, estimateTextTokenCount } from './usage';
 import { resolveImagesForTextModel } from './vision';
 
 type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
@@ -103,6 +105,7 @@ export class AllInCopilotProvider implements vscode.LanguageModelChatProvider {
       visionProxy: visionResolution.visionModelId,
       describedImages: visionResolution.describedImages,
       unavailableImages: visionResolution.unavailableImages,
+      messages: summarizeMessageParts(visionResolution.messages),
     });
 
     let response = await fetch(prepared.url, {
@@ -151,11 +154,17 @@ export class AllInCopilotProvider implements vscode.LanguageModelChatProvider {
   }
 
   async provideTokenCount(
-    _modelInfo: vscode.LanguageModelChatInformation,
+    modelInfo: vscode.LanguageModelChatInformation,
     text: string | vscode.LanguageModelChatRequestMessage,
     _token: vscode.CancellationToken,
   ): Promise<number> {
-    return estimateTokenCount(text);
+    const count = estimateTokenCount(text);
+    logger.debug('Token count requested.', {
+      model: modelInfo.id,
+      inputKind: typeof text === 'string' ? 'string' : 'message',
+      count,
+    });
+    return count;
   }
 }
 
@@ -336,21 +345,10 @@ function formatPickerName(model: ResolvedModelConfig): string {
 
 function estimateTokenCount(text: string | vscode.LanguageModelChatRequestMessage): number {
   if (typeof text === 'string') {
-    return Math.ceil(text.length / 4);
+    return Math.max(1, estimateTextTokenCount(text));
   }
 
-  let chars = 0;
-  for (const part of text.content ?? []) {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      chars += part.value.length;
-    } else if (part instanceof vscode.LanguageModelDataPart) {
-      chars += Math.ceil(part.data.byteLength / 3);
-    } else {
-      chars += 100;
-    }
-  }
-
-  return Math.max(1, Math.ceil(chars / 4));
+  return estimateMessageTokenCount(text);
 }
 
 function formatError(error: unknown): string {

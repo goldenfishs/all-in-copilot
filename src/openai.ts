@@ -9,6 +9,14 @@ import type {
 } from './types';
 import { ReasoningTracker, signatureForMessage } from './reasoningMemory';
 import { logger } from './logger';
+import { collectToolResultText, inputPartToText, isToolResultPart, joinPartTexts } from './messageParts';
+import {
+  estimateMessagesTokenCount,
+  estimateTextTokenCount,
+  mergeTokenUsage,
+  reportCopilotTokenUsage,
+  type TokenUsage,
+} from './usage';
 
 interface ToolCallBuffer {
   id?: string;
@@ -25,6 +33,11 @@ interface StreamStats {
   toolDeltaCount: number;
   emittedToolCalls: number;
   doneSignal: boolean;
+  usageReported: boolean;
+  usage?: TokenUsage;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
   finishReason?: string;
 }
 
@@ -70,11 +83,9 @@ export function buildChatCompletionRequest(
   const toolConfig = convertTools(options);
   if (model.toolCalling && toolConfig.tools?.length) {
     request.tools = toolConfig.tools;
-    const toolChoice = selectToolChoice(model, messages, toolConfig.tool_choice);
-    if (toolChoice) {
-      request.tool_choice = toolChoice;
+    if (toolConfig.tool_choice) {
+      request.tool_choice = toolConfig.tool_choice;
     }
-    request.messages = withToolUseGuidance(request.messages, toolConfig.tools);
   }
 
   if (isDeepSeekV4Model(model) && hasMissingDeepSeekThinkingReplay(request.messages)) {
@@ -102,51 +113,6 @@ function getConfiguredReasoningEffort(options: vscode.ProvideLanguageModelChatRe
     configurableOptions.configuration?.reasoningEffort ??
     options.modelOptions?.reasoningEffort;
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function withToolUseGuidance(messages: OpenAIMessage[], tools: OpenAIFunctionTool[]): OpenAIMessage[] {
-  const toolNames = tools.map((tool) => tool.function.name).filter(Boolean).slice(0, 40).join(', ');
-  const guidance = [
-    'When the user asks about the current workspace, files, search results, codebase structure, or project contents, call the available VS Code tools before answering.',
-    'Do not stop after saying that you will inspect or search; perform the relevant tool call in the same response.',
-    toolNames ? `Available tool names include: ${toolNames}.` : '',
-  ].filter(Boolean).join(' ');
-
-  const first = messages[0];
-  if (first?.role === 'system' && typeof first.content === 'string') {
-    return [
-      {
-        ...first,
-        content: `${guidance}\n\n${first.content}`,
-      },
-      ...messages.slice(1),
-    ];
-  }
-
-  return [
-    { role: 'system', content: guidance },
-    ...messages,
-  ];
-}
-
-function shouldRequireToolForWorkspaceRequest(
-  messages: readonly vscode.LanguageModelChatRequestMessage[],
-): boolean {
-  const lastUserMessage = [...messages].reverse().find((message) =>
-    message.role === vscode.LanguageModelChatMessageRole.User
-  );
-  if (!lastUserMessage) {
-    return false;
-  }
-
-  const text = (lastUserMessage.content ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-    return '';
-  }).join('\n').toLowerCase();
-
-  return /完整.*(读|阅读|看|分析)|读.*项目|阅读.*项目|看.*项目|分析.*项目|搜索|查找|文件|目录|代码库|codebase|workspace|project|read.*project|search|find.*file/.test(text);
 }
 
 function normalizeReasoningEffort(value: string | undefined, model: ResolvedModelConfig): string | undefined {
@@ -200,24 +166,6 @@ function isReasoningEffortSupported(model: ResolvedModelConfig, value: string): 
   return ['minimal', 'low', 'medium', 'high', 'xhigh'].includes(value);
 }
 
-function shouldSendToolChoice(model: ResolvedModelConfig): boolean {
-  return !isDeepSeekModel(model);
-}
-
-function selectToolChoice(
-  model: ResolvedModelConfig,
-  messages: readonly vscode.LanguageModelChatRequestMessage[],
-  fallback: OpenAIChatCompletionRequest['tool_choice'],
-): OpenAIChatCompletionRequest['tool_choice'] | undefined {
-  if (!shouldSendToolChoice(model)) {
-    return undefined;
-  }
-
-  return shouldRequireToolForWorkspaceRequest(messages)
-    ? 'required'
-    : fallback;
-}
-
 function isDeepSeekModel(model: ResolvedModelConfig): boolean {
   const provider = model.provider.toLowerCase();
   const id = model.id.toLowerCase();
@@ -263,6 +211,7 @@ export async function processChatCompletionStream(
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
   token: vscode.CancellationToken,
   reasoningTracker: ReasoningTracker,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -270,6 +219,7 @@ export async function processChatCompletionStream(
   const toolCalls = new Map<number, ToolCallBuffer>();
   let visibleText = '';
   let reasoningContent = '';
+  let pendingText = '';
   let streamFinished = false;
   const stats: StreamStats = {
     chunkCount: 0,
@@ -279,13 +229,14 @@ export async function processChatCompletionStream(
     toolDeltaCount: 0,
     emittedToolCalls: 0,
     doneSignal: false,
+    usageReported: false,
   };
   const textToolCallExtractor = new TextToolCallExtractor(
-    progress,
     toolCalls,
     stats,
     (delta) => {
       visibleText += delta;
+      pendingText += delta;
     },
   );
 
@@ -343,11 +294,29 @@ export async function processChatCompletionStream(
   }
 
   textToolCallExtractor.finish();
+  const hasToolCalls = Array.from(toolCalls.values()).some((toolCall) => !!toolCall.name);
+  if (!hasToolCalls) {
+    flushText(pendingText, progress, stats);
+  } else if (pendingText.trim()) {
+    logger.debug('Suppressed visible text from tool-call response.', {
+      text: pendingText.trim().slice(0, 200),
+      finishReason: stats.finishReason,
+      toolCallCount: Array.from(toolCalls.values()).filter((toolCall) => !!toolCall.name).length,
+    });
+  }
   reasoningTracker.remember({
     reasoningContent,
-    visibleSignature: buildAssistantVisibleSignature(visibleText, toolCalls),
+    visibleSignature: buildAssistantVisibleSignature(hasToolCalls ? '' : visibleText, toolCalls),
   });
   flushToolCalls(toolCalls, progress, stats);
+  if (stats.usage) {
+    stats.usageReported = reportCopilotTokenUsage(progress, stats.usage, 'openai-stream');
+  } else {
+    stats.usageReported = reportCopilotTokenUsage(progress, {
+      promptTokens: estimateMessagesTokenCount(messages),
+      completionTokens: estimateTextTokenCount(visibleText) + estimateTextTokenCount(reasoningContent),
+    }, 'openai-estimated');
+  }
   logger.info('Stream complete.', stats);
 }
 
@@ -414,10 +383,16 @@ function convertMessages(
           }
         }
         toolResults.push(toolMessage);
+        continue;
+      }
+
+      const fallbackText = inputPartToText(part);
+      if (fallbackText) {
+        textParts.push(fallbackText);
       }
     }
 
-    const text = textParts.join('').trim();
+    const text = joinPartTexts(textParts);
 
     if (role === 'assistant') {
       const assistantMessage: OpenAIMessage = {
@@ -509,7 +484,6 @@ function convertTools(options: vscode.ProvideLanguageModelChatResponseOptions): 
 
   return {
     tools: convertedTools,
-    tool_choice: 'auto',
   };
 }
 
@@ -532,6 +506,14 @@ function processChunk(
   onReasoningDelta: (delta: string) => void,
 ): void {
   stats.chunkCount += 1;
+  const usage = readOpenAIUsage(chunk.usage);
+  if (usage) {
+    stats.usage = mergeTokenUsage(stats.usage, usage);
+    stats.promptTokens = usage.promptTokens;
+    stats.completionTokens = usage.completionTokens;
+    stats.totalTokens = usage.totalTokens;
+  }
+
   const choices = chunk.choices;
   if (!Array.isArray(choices) || choices.length === 0) {
     return;
@@ -613,7 +595,6 @@ class TextToolCallExtractor {
   private buffer = '';
 
   constructor(
-    private readonly progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     private readonly toolCalls: Map<number, ToolCallBuffer>,
     private readonly stats: StreamStats,
     private readonly onVisibleText: (delta: string) => void,
@@ -626,7 +607,7 @@ class TextToolCallExtractor {
 
   finish(): void {
     this.drain(true);
-    this.flushText(this.buffer);
+    this.captureText(this.buffer);
     this.buffer = '';
   }
 
@@ -639,13 +620,13 @@ class TextToolCallExtractor {
         if (flushLength <= 0) {
           return;
         }
-        this.flushText(this.buffer.slice(0, flushLength));
+        this.captureText(this.buffer.slice(0, flushLength));
         this.buffer = this.buffer.slice(flushLength);
         return;
       }
 
       if (tagStart > 0) {
-        this.flushText(this.buffer.slice(0, tagStart));
+        this.captureText(this.buffer.slice(0, tagStart));
         this.buffer = this.buffer.slice(tagStart);
         continue;
       }
@@ -653,7 +634,7 @@ class TextToolCallExtractor {
       const openTag = this.buffer.match(/^<tool_calls?\b[^>]*>/i)?.[0];
       if (!openTag) {
         if (final) {
-          this.flushText(this.buffer);
+          this.captureText(this.buffer);
           this.buffer = '';
         }
         return;
@@ -664,7 +645,7 @@ class TextToolCallExtractor {
       const closeIndex = this.buffer.toLowerCase().indexOf(closeTag, openTag.length);
       if (closeIndex < 0) {
         if (final) {
-          this.flushText(this.buffer);
+          this.captureText(this.buffer);
           this.buffer = '';
         }
         return;
@@ -674,7 +655,7 @@ class TextToolCallExtractor {
       const rawBlock = this.buffer.slice(0, closeIndex + closeTag.length);
       const parsedCalls = parseTextToolCallPayload(rawPayload);
       if (parsedCalls.length === 0) {
-        this.flushText(rawBlock);
+        this.captureText(rawBlock);
       } else {
         for (const parsedCall of parsedCalls) {
           this.emitToolCall(parsedCall);
@@ -684,12 +665,10 @@ class TextToolCallExtractor {
     }
   }
 
-  private flushText(text: string): void {
+  private captureText(text: string): void {
     if (!text) {
       return;
     }
-    this.progress.report(new vscode.LanguageModelTextPart(text));
-    this.stats.textChars += text.length;
     this.onVisibleText(text);
   }
 
@@ -697,15 +676,13 @@ class TextToolCallExtractor {
     const index = nextToolCallIndex(this.toolCalls);
     const id = toolCall.id || createToolCallId();
     const input = parseToolArguments(toolCall.arguments);
-    this.progress.report(new vscode.LanguageModelToolCallPart(id, toolCall.name ?? '', input));
     this.toolCalls.set(index, {
       id,
       name: toolCall.name,
       arguments: toolCall.arguments,
-      emitted: true,
+      emitted: false,
     });
     this.stats.toolDeltaCount += 1;
-    this.stats.emittedToolCalls += 1;
   }
 }
 
@@ -801,6 +778,19 @@ function normalizeTextToolArguments(value: unknown): string {
   return stringifyToolInput(value ?? {});
 }
 
+function flushText(
+  text: string,
+  progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+  stats: StreamStats,
+): void {
+  if (!text) {
+    return;
+  }
+
+  progress.report(new vscode.LanguageModelTextPart(text));
+  stats.textChars += text.length;
+}
+
 function nextToolCallIndex(toolCalls: Map<number, ToolCallBuffer>): number {
   const indexes = Array.from(toolCalls.keys());
   return indexes.length ? Math.max(...indexes) + 1 : 0;
@@ -838,6 +828,46 @@ function buildAssistantVisibleSignature(visibleText: string, toolCalls: Map<numb
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function readOpenAIUsage(value: unknown): TokenUsage | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const promptTokens =
+    readNumber(record.prompt_tokens) ??
+    readNumber(record.input_tokens) ??
+    readNumber(record.promptTokens);
+  const completionTokens =
+    readNumber(record.completion_tokens) ??
+    readNumber(record.output_tokens) ??
+    readNumber(record.completionTokens);
+  const totalTokens =
+    readNumber(record.total_tokens) ??
+    readNumber(record.totalTokens) ??
+    ((promptTokens ?? 0) + (completionTokens ?? 0) || undefined);
+  const details = readRecord(record.prompt_tokens_details) ?? readRecord(record.input_tokens_details);
+  const cachedTokens =
+    readNumber(details?.cached_tokens) ??
+    readNumber(details?.cache_read_input_tokens) ??
+    readNumber(record.prompt_cache_hit_tokens);
+
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cachedTokens,
+  };
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function readRecord(value: unknown): Record<string, unknown> | undefined {
@@ -944,36 +974,6 @@ function mapRole(message: vscode.LanguageModelChatRequestMessage): 'user' | 'ass
   }
 
   return 'system';
-}
-
-function isToolResultPart(value: unknown): value is {
-  callId: string;
-  content?: readonly unknown[];
-} {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return typeof record.callId === 'string' && 'content' in record;
-}
-
-function collectToolResultText(parts?: readonly unknown[]): string {
-  return (parts ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-
-    if (typeof part === 'string') {
-      return part;
-    }
-
-    try {
-      return JSON.stringify(part);
-    } catch {
-      return '';
-    }
-  }).join('');
 }
 
 function createDataUrl(part: vscode.LanguageModelDataPart): string {

@@ -11,7 +11,7 @@ const DEFAULT_FAMILY = 'all-in-copilot';
 const DEFAULT_PROVIDER = 'default';
 
 export function getDebugLoggingEnabled(): boolean {
-  return vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>('debug', false);
+  return vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>('debug', true);
 }
 
 export function getFallbackBaseUrl(): string {

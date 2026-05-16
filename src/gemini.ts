@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
 import type { ResolvedModelConfig } from './types';
+import { collectToolResultText, inputPartToText, isToolResultPart } from './messageParts';
+import {
+  estimateMessagesTokenCount,
+  estimateTextTokenCount,
+  mergeTokenUsage,
+  reportCopilotTokenUsage,
+  type TokenUsage,
+} from './usage';
 
 interface GeminiPart {
   text?: string;
@@ -100,10 +108,16 @@ export async function processGeminiStream(
   body: ReadableStream<Uint8Array>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
   token: vscode.CancellationToken,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const emittedToolCalls = new Set<string>();
+  const stats = {
+    textTokens: 0,
+    usageReported: false,
+    usage: undefined as TokenUsage | undefined,
+  };
   let buffer = '';
 
   try {
@@ -129,7 +143,7 @@ export async function processGeminiStream(
         }
 
         try {
-          processGeminiChunk(JSON.parse(data) as Record<string, unknown>, emittedToolCalls, progress);
+          processGeminiChunk(JSON.parse(data) as Record<string, unknown>, emittedToolCalls, progress, stats);
         } catch {
           // Ignore malformed keepalive/event fragments.
         }
@@ -137,6 +151,15 @@ export async function processGeminiStream(
     }
   } finally {
     reader.releaseLock();
+  }
+
+  if (stats.usage) {
+    stats.usageReported = reportCopilotTokenUsage(progress, stats.usage, 'gemini-stream');
+  } else {
+    stats.usageReported = reportCopilotTokenUsage(progress, {
+      promptTokens: estimateMessagesTokenCount(messages),
+      completionTokens: stats.textTokens,
+    }, 'gemini-estimated');
   }
 }
 
@@ -190,6 +213,12 @@ function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessa
             },
           },
         });
+        continue;
+      }
+
+      const fallbackText = inputPartToText(part);
+      if (fallbackText) {
+        parts.push({ text: fallbackText });
       }
     }
 
@@ -227,7 +256,13 @@ function processGeminiChunk(
   chunk: Record<string, unknown>,
   emittedToolCalls: Set<string>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+  stats: { textTokens: number; usageReported: boolean; usage?: TokenUsage },
 ): void {
+  const usage = readGeminiUsage(chunk.usageMetadata ?? chunk.usage_metadata ?? chunk.usage);
+  if (usage) {
+    stats.usage = mergeTokenUsage(stats.usage, usage);
+  }
+
   const candidates = Array.isArray(chunk.candidates) ? chunk.candidates : [];
   const candidate = readRecord(candidates[0]);
   const content = readRecord(candidate?.content);
@@ -241,6 +276,7 @@ function processGeminiChunk(
 
     if (typeof part.text === 'string' && part.text.length > 0) {
       progress.report(new vscode.LanguageModelTextPart(part.text));
+      stats.textTokens += estimateTextTokenCount(part.text);
     }
 
     const functionCall = readRecord(part.functionCall);
@@ -332,26 +368,6 @@ function mapRole(message: vscode.LanguageModelChatRequestMessage): 'user' | 'ass
   return 'system';
 }
 
-function isToolResultPart(value: unknown): value is { callId: string; content?: readonly unknown[] } {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return typeof record.callId === 'string' && 'content' in record;
-}
-
-function collectToolResultText(parts?: readonly unknown[]): string {
-  return (parts ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-    if (typeof part === 'string') {
-      return part;
-    }
-    return stringifyJson(part);
-  }).join('');
-}
-
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -360,6 +376,45 @@ function readRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
+}
+
+function readGeminiUsage(value: unknown): TokenUsage | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const promptTokens =
+    readNumber(record.promptTokenCount) ??
+    readNumber(record.prompt_tokens) ??
+    readNumber(record.input_tokens);
+  const completionTokens =
+    readNumber(record.candidatesTokenCount) ??
+    readNumber(record.completion_tokens) ??
+    readNumber(record.output_tokens);
+  const thoughtsTokens = readNumber(record.thoughtsTokenCount) ?? 0;
+  const totalTokens =
+    readNumber(record.totalTokenCount) ??
+    readNumber(record.total_tokens) ??
+    ((promptTokens ?? 0) + (completionTokens ?? 0) + thoughtsTokens || undefined);
+  const cachedTokens =
+    readNumber(record.cachedContentTokenCount) ??
+    readNumber(record.cached_tokens);
+
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    promptTokens,
+    completionTokens: (completionTokens ?? 0) + thoughtsTokens,
+    totalTokens,
+    cachedTokens,
+  };
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function stringifyJson(value: unknown): string {

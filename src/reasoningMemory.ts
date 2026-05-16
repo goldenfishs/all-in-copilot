@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
+import { collectToolResultText, inputPartToText, isToolResultPart } from './messageParts';
 import type { ResolvedModelConfig } from './types';
 
 const MAX_REASONING_ENTRIES = 200;
@@ -92,8 +93,9 @@ export function signatureForMessage(message: vscode.LanguageModelChatRequestMess
       continue;
     }
 
-    if (typeof part === 'string') {
-      parts.push(serializeVisibleText(part));
+    const fallbackText = inputPartToText(part);
+    if (fallbackText) {
+      parts.push(serializeVisibleText(fallbackText));
       continue;
     }
 
@@ -113,33 +115,6 @@ function roleName(role: vscode.LanguageModelChatMessageRole): string {
   }
 
   return 'system';
-}
-
-function isToolResultPart(value: unknown): value is { callId: string; content?: readonly unknown[] } {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return typeof record.callId === 'string' && 'content' in record;
-}
-
-function collectToolResultText(parts?: readonly unknown[]): string {
-  return (parts ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-
-    if (typeof part === 'string') {
-      return part;
-    }
-
-    try {
-      return JSON.stringify(part);
-    } catch {
-      return '';
-    }
-  }).join('');
 }
 
 function makeKey(model: ResolvedModelConfig, prefixHash: string, visibleSignature: string): string {

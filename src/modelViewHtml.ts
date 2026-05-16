@@ -1977,8 +1977,8 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
         if (id.startsWith('glm-5') || id.startsWith('glm-4.7') || id.startsWith('glm-4.6')) {
           return {
             family: 'glm',
-            contextLength: id.includes('4.6v') ? 128000 : 200000,
-            maxOutputTokens: 128000,
+            contextLength: id.includes('4.6v') ? 128000 : 160000,
+            maxOutputTokens: id.includes('4.6v') ? 65536 : 128000,
             vision: id.includes('v'),
             toolCalling: true
           };
@@ -2025,7 +2025,7 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
       if (/^o[134]/.test(id)) {
         return {
           family: 'openai-reasoning',
-          contextLength: 200000,
+          contextLength: 160000,
           maxOutputTokens: 100000,
           vision: true,
           toolCalling: true,
@@ -2035,7 +2035,7 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
       if (id.startsWith('gpt-4.1')) {
         return {
           family: 'gpt-4',
-          contextLength: 1047576,
+          contextLength: 192000,
           maxOutputTokens: 32768,
           vision: true,
           toolCalling: true
@@ -2066,8 +2066,8 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
       const currentV4 = id.includes('v4');
       return {
         family: 'deepseek',
-        contextLength: currentV4 ? 1048576 : 64000,
-        maxOutputTokens: currentV4 ? 393216 : 8192,
+        contextLength: currentV4 ? 400000 : 64000,
+        maxOutputTokens: currentV4 ? 192000 : 8192,
         vision: false,
         toolCalling: !id.includes('reasoner'),
         reasoningEffort: currentV4 ? 'high' : undefined
@@ -2077,7 +2077,7 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
     function inferGeminiDefaults(id) {
       return {
         family: 'gemini',
-        contextLength: 1048576,
+        contextLength: 400000,
         maxOutputTokens: 65536,
         vision: true,
         toolCalling: true,
@@ -2088,7 +2088,7 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
     function inferKimiDefaults(id) {
       return {
         family: 'kimi',
-        contextLength: id.includes('128k') || id.includes('0711') ? 131072 : 262144,
+        contextLength: id.includes('128k') || id.includes('0711') ? 128000 : 192000,
         maxOutputTokens: id.startsWith('moonshot-') ? 8192 : 32768,
         vision: id.includes('vision') || id === 'kimi-k2.5' || id === 'kimi-k2.6',
         toolCalling: true
@@ -2098,7 +2098,7 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
     function inferMiniMaxDefaults(id) {
       return {
         family: 'minimax',
-        contextLength: 204800,
+        contextLength: 160000,
         maxOutputTokens: 128000,
         vision: false,
         toolCalling: true
@@ -2107,16 +2107,16 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
 
     function inferGpt5ContextLength(id) {
       if (id.startsWith('gpt-5.5') || (id.startsWith('gpt-5.4') && !id.startsWith('gpt-5.4-mini'))) {
-        return 1050000;
+        return 400000;
       }
-      return 400000;
+      return 192000;
     }
 
     function inferClaudeContextLength(id) {
       if (id.includes('opus-4-7') || id.includes('opus-4-6') || id.includes('sonnet-4-6')) {
-        return 1000000;
+        return 400000;
       }
-      return 200000;
+      return 160000;
     }
 
     function inferClaudeMaxOutputTokens(id) {
@@ -2134,12 +2134,12 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
 
     function inferGrokContextLength(id) {
       if (id.includes('4.20')) {
-        return 2000000;
+        return 400000;
       }
       if (id.includes('code-fast')) {
-        return 256000;
+        return 192000;
       }
-      return 1000000;
+      return 400000;
     }
 
     function shouldRefreshKnownDefault(model, field, currentValue, defaultValue) {
@@ -2154,25 +2154,52 @@ export function renderModelManagerHtml(webview: vscode.Webview): string {
     }
 
     function isKnownStaleContextLength(id, value) {
-      if ((id.startsWith('gpt-5.5') || id.startsWith('gpt-5.4')) && [1048576, 400000].includes(value)) {
+      if ((id.startsWith('gpt-5.5') || (id.startsWith('gpt-5.4') && !id.startsWith('gpt-5.4-mini'))) && [1000000, 1048576, 1050000].includes(value)) {
         return true;
       }
-      if (id.startsWith('gpt-4.1') && value === 1048576) {
+      if (id.startsWith('gpt-5') && value === 400000) {
         return true;
       }
-      if ((id.includes('opus-4-7') || id.includes('opus-4-6') || id.includes('sonnet-4-6')) && value === 200000) {
+      if (id.startsWith('gpt-4.1') && [1047576, 1048576].includes(value)) {
         return true;
       }
-      if (id.includes('grok-4.20') && [256000, 1048576].includes(value)) {
+      if (/^o[134]/.test(id) && value === 200000) {
         return true;
       }
-      if (id.includes('grok-4.3') && value === 256000) {
+      if (id.startsWith('claude-') && [200000, 1000000].includes(value)) {
+        return true;
+      }
+      if (id.includes('grok-4.20') && [256000, 1000000, 1048576, 2000000].includes(value)) {
+        return true;
+      }
+      if ((id.includes('grok-4.3') || id.includes('code-fast')) && [256000, 1000000].includes(value)) {
+        return true;
+      }
+      if (id.startsWith('deepseek-v4') && value === 1048576) {
+        return true;
+      }
+      if (id.startsWith('gemini-') && value === 1048576) {
+        return true;
+      }
+      if ((id.startsWith('kimi-') || id.startsWith('moonshot-')) && [131072, 262144].includes(value)) {
+        return true;
+      }
+      if (id.toLowerCase().startsWith('minimax-') && value === 204800) {
+        return true;
+      }
+      if (id.startsWith('glm-') && value === 200000) {
         return true;
       }
       return false;
     }
 
     function isKnownStaleMaxOutputTokens(id, value) {
+      if (id.startsWith('deepseek-v4') && [65536, 128000, 393216].includes(value)) {
+        return true;
+      }
+      if (id === 'glm-4.6v' && value === 128000) {
+        return true;
+      }
       return false;
     }
 

@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
 import type { ResolvedModelConfig } from './types';
+import { collectToolResultText, inputPartToText, isToolResultPart } from './messageParts';
+import {
+  estimateMessagesTokenCount,
+  estimateTextTokenCount,
+  mergeTokenUsage,
+  reportCopilotTokenUsage,
+  type TokenUsage,
+} from './usage';
 
 interface AnthropicContentBlock {
   type: 'text' | 'image' | 'tool_use' | 'tool_result';
@@ -117,11 +125,17 @@ export async function processAnthropicStream(
   body: ReadableStream<Uint8Array>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
   token: vscode.CancellationToken,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   const toolBuffers = new Map<number, { id: string; name: string; input: string }>();
+  const stats = {
+    textTokens: 0,
+    usageReported: false,
+    usage: undefined as TokenUsage | undefined,
+  };
 
   try {
     while (!token.isCancellationRequested) {
@@ -145,7 +159,7 @@ export async function processAnthropicStream(
           continue;
         }
 
-        processAnthropicEvent(JSON.parse(data) as Record<string, unknown>, toolBuffers, progress);
+        processAnthropicEvent(JSON.parse(data) as Record<string, unknown>, toolBuffers, progress, stats);
       }
     }
   } finally {
@@ -153,6 +167,14 @@ export async function processAnthropicStream(
   }
 
   flushToolBuffers(toolBuffers, progress);
+  if (stats.usage) {
+    stats.usageReported = reportCopilotTokenUsage(progress, stats.usage, 'anthropic-stream');
+  } else {
+    stats.usageReported = reportCopilotTokenUsage(progress, {
+      promptTokens: estimateMessagesTokenCount(messages),
+      completionTokens: stats.textTokens,
+    }, 'anthropic-estimated');
+  }
 }
 
 function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): {
@@ -225,6 +247,12 @@ function convertContent(parts: readonly unknown[]): AnthropicContentBlock[] {
         tool_use_id: part.callId,
         content: collectToolResultText(part.content),
       });
+      continue;
+    }
+
+    const fallbackText = inputPartToText(part);
+    if (fallbackText) {
+      content.push({ type: 'text', text: fallbackText });
     }
   }
 
@@ -243,8 +271,13 @@ function processAnthropicEvent(
   event: Record<string, unknown>,
   toolBuffers: Map<number, { id: string; name: string; input: string }>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+  stats: { textTokens: number; usageReported: boolean; usage?: TokenUsage },
 ): void {
   const type = event.type;
+  const usage = readAnthropicUsage(event.usage ?? readRecord(event.message)?.usage);
+  if (usage) {
+    stats.usage = mergeTokenUsage(stats.usage, usage);
+  }
 
   if (type === 'content_block_start') {
     const index = typeof event.index === 'number' ? event.index : 0;
@@ -268,6 +301,7 @@ function processAnthropicEvent(
 
     if (delta.type === 'text_delta' && typeof delta.text === 'string') {
       progress.report(new vscode.LanguageModelTextPart(delta.text));
+      stats.textTokens += estimateTextTokenCount(delta.text);
       return;
     }
 
@@ -335,31 +369,45 @@ function mapRole(message: vscode.LanguageModelChatRequestMessage): 'user' | 'ass
   return 'system';
 }
 
-function isToolResultPart(value: unknown): value is {
-  callId: string;
-  content?: readonly unknown[];
-} {
-  if (!value || typeof value !== 'object') {
-    return false;
+function readAnthropicUsage(value: unknown): TokenUsage | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
   }
-  const record = value as Record<string, unknown>;
-  return typeof record.callId === 'string' && 'content' in record;
+
+  const promptTokens =
+    readNumber(record.input_tokens) ??
+    readNumber(record.prompt_tokens);
+  const completionTokens =
+    readNumber(record.output_tokens) ??
+    readNumber(record.completion_tokens);
+  const totalTokens =
+    readNumber(record.total_tokens) ??
+    ((promptTokens ?? 0) + (completionTokens ?? 0) || undefined);
+  const cachedTokens =
+    readNumber(record.cache_read_input_tokens) ??
+    readNumber(record.cached_tokens);
+
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cachedTokens,
+  };
 }
 
-function collectToolResultText(parts?: readonly unknown[]): string {
-  return (parts ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-    if (typeof part === 'string') {
-      return part;
-    }
-    try {
-      return JSON.stringify(part);
-    } catch {
-      return '';
-    }
-  }).join('');
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {

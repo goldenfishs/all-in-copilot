@@ -1,11 +1,25 @@
 import * as vscode from 'vscode';
 import type { ResolvedModelConfig } from './types';
+import { collectToolResultText, inputPartToText, isToolResultPart, joinPartTexts } from './messageParts';
+import {
+  estimateMessagesTokenCount,
+  estimateTextTokenCount,
+  mergeTokenUsage,
+  reportCopilotTokenUsage,
+  type TokenUsage,
+} from './usage';
 
 interface ResponsesToolBuffer {
   callId?: string;
   name?: string;
   arguments: string;
   emitted?: boolean;
+}
+
+interface ResponsesStreamStats {
+  textTokens: number;
+  usageReported: boolean;
+  usage?: TokenUsage;
 }
 
 export function buildOpenAIResponsesRequest(
@@ -70,10 +84,15 @@ export async function processOpenAIResponsesStream(
   body: ReadableStream<Uint8Array>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
   token: vscode.CancellationToken,
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const toolBuffers = new Map<string, ResponsesToolBuffer>();
+  const stats: ResponsesStreamStats = {
+    textTokens: 0,
+    usageReported: false,
+  };
   let buffer = '';
 
   try {
@@ -99,7 +118,7 @@ export async function processOpenAIResponsesStream(
         }
 
         try {
-          processResponsesEvent(JSON.parse(data) as Record<string, unknown>, toolBuffers, progress);
+          processResponsesEvent(JSON.parse(data) as Record<string, unknown>, toolBuffers, progress, stats);
         } catch {
           // Ignore malformed stream fragments; providers often mix keepalive data with SSE.
         }
@@ -110,6 +129,14 @@ export async function processOpenAIResponsesStream(
   }
 
   flushToolBuffers(toolBuffers, progress);
+  if (stats.usage) {
+    stats.usageReported = reportCopilotTokenUsage(progress, stats.usage, 'openai-responses-stream');
+  } else {
+    stats.usageReported = reportCopilotTokenUsage(progress, {
+      promptTokens: estimateMessagesTokenCount(messages),
+      completionTokens: stats.textTokens,
+    }, 'openai-responses-estimated');
+  }
 }
 
 function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): {
@@ -154,10 +181,16 @@ function convertMessages(messages: readonly vscode.LanguageModelChatRequestMessa
           callId: part.callId,
           output: collectToolResultText(part.content),
         });
+        continue;
+      }
+
+      const fallbackText = inputPartToText(part);
+      if (fallbackText) {
+        textParts.push(fallbackText);
       }
     }
 
-    const text = textParts.join('').trim();
+    const text = joinPartTexts(textParts);
     if (role === 'system') {
       if (text) {
         instructions.push(text);
@@ -243,11 +276,17 @@ function processResponsesEvent(
   event: Record<string, unknown>,
   toolBuffers: Map<string, ResponsesToolBuffer>,
   progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+  stats: ResponsesStreamStats,
 ): void {
   const type = readString(event.type) ?? readString(event.event);
+  const usage = readResponsesUsage(event.usage ?? readRecord(event.response)?.usage);
+  if (usage) {
+    stats.usage = mergeTokenUsage(stats.usage, usage);
+  }
 
   if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
     progress.report(new vscode.LanguageModelTextPart(event.delta));
+    stats.textTokens += estimateTextTokenCount(event.delta);
     return;
   }
 
@@ -346,26 +385,6 @@ function mapRole(message: vscode.LanguageModelChatRequestMessage): 'user' | 'ass
   return 'system';
 }
 
-function isToolResultPart(value: unknown): value is { callId: string; content?: readonly unknown[] } {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return typeof record.callId === 'string' && 'content' in record;
-}
-
-function collectToolResultText(parts?: readonly unknown[]): string {
-  return (parts ?? []).map((part) => {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      return part.value;
-    }
-    if (typeof part === 'string') {
-      return part;
-    }
-    return stringifyJson(part);
-  }).join('');
-}
-
 function createDataUrl(part: vscode.LanguageModelDataPart): string {
   return `data:${part.mimeType};base64,${Buffer.from(part.data).toString('base64')}`;
 }
@@ -378,6 +397,42 @@ function readRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
+}
+
+function readResponsesUsage(value: unknown): TokenUsage | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const inputDetails = readRecord(record.input_tokens_details);
+  const promptTokens =
+    readNumber(record.input_tokens) ??
+    readNumber(record.prompt_tokens);
+  const completionTokens =
+    readNumber(record.output_tokens) ??
+    readNumber(record.completion_tokens);
+  const totalTokens =
+    readNumber(record.total_tokens) ??
+    ((promptTokens ?? 0) + (completionTokens ?? 0) || undefined);
+  const cachedTokens =
+    readNumber(inputDetails?.cached_tokens) ??
+    readNumber(inputDetails?.cache_read_input_tokens);
+
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cachedTokens,
+  };
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function stringifyJson(value: unknown): string {
