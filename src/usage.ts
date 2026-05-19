@@ -52,46 +52,51 @@ export function mergeTokenUsage(current: TokenUsage | undefined, update: TokenUs
 }
 
 export function estimateMessagesTokenCount(messages: readonly vscode.LanguageModelChatRequestMessage[]): number {
-  const total = messages.reduce((sum, message) => sum + estimateMessageTokenCount(message), 0);
+  let total = 2; // priming tokens for assistant turn
+  for (const message of messages) {
+    total += estimateMessageTokenCount(message);
+  }
   return Math.max(1, total);
 }
 
 export function estimateMessageTokenCount(message: vscode.LanguageModelChatRequestMessage): number {
-  let tokens = estimateTextTokenCount(roleName(message.role));
-  if (message.name) {
-    tokens += estimateTextTokenCount(message.name);
-  }
+  let tokens = 4; // role + framing overhead
+
   for (const part of message.content ?? []) {
     tokens += estimatePartTokenCount(part);
   }
   return Math.max(1, tokens);
 }
 
+const CJK = /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g;
+const WORD = /[A-Za-z0-9_]+/g;
+
+/**
+ * Improved heuristic tokenizer.
+ * - CJK characters (~1 token each)
+ * - ASCII word characters (~1 token per ~3 chars, BPE-style)
+ * - everything else (punctuation, whitespace, control) at ~1 token per 6 chars.
+ */
 export function estimateTextTokenCount(value: string): number {
   if (!value) {
     return 0;
   }
 
-  let ascii = 0;
-  let cjk = 0;
-  let other = 0;
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
-    if (
-      (code >= 0x4e00 && code <= 0x9fff) ||
-      (code >= 0x3400 && code <= 0x4dbf) ||
-      (code >= 0x3040 && code <= 0x30ff) ||
-      (code >= 0xac00 && code <= 0xd7af)
-    ) {
-      cjk += 1;
-    } else if (code <= 0x7f) {
-      ascii += 1;
-    } else {
-      other += 1;
-    }
+  const cjkMatches = value.match(CJK);
+  const cjk = cjkMatches?.length ?? 0;
+
+  let words = 0;
+  let wordChars = 0;
+  for (const match of value.matchAll(WORD)) {
+    words += 1;
+    wordChars += match[0].length;
   }
 
-  return Math.max(1, Math.ceil(ascii / 4) + Math.ceil(cjk * 0.8) + Math.ceil(other / 2));
+  const otherChars = value.length - cjk - wordChars;
+  const wordTokens = words + Math.ceil(Math.max(0, wordChars - words) / 3);
+  const otherTokens = Math.ceil(Math.max(0, otherChars) / 6);
+
+  return Math.max(1, cjk + wordTokens + otherTokens);
 }
 
 export function estimateJsonTokenCount(value: unknown): number {
@@ -116,14 +121,27 @@ function estimatePartTokenCount(part: unknown): number {
   }
 
   if (part instanceof vscode.LanguageModelToolCallPart) {
-    return estimateTextTokenCount(part.name) +
-      estimateTextTokenCount(part.callId) +
-      estimateJsonTokenCount(part.input);
+    let tokens = estimateTextTokenCount(part.name);
+    try {
+      tokens += estimateTextTokenCount(JSON.stringify(part.input ?? {}));
+    } catch {
+      tokens += 16;
+    }
+    tokens += 4; // tool call framing overhead
+    return tokens;
   }
 
   if (part instanceof vscode.LanguageModelToolResultPart) {
-    return estimateTextTokenCount(part.callId) +
-      part.content.reduce<number>((sum, entry) => sum + estimatePartTokenCount(entry), 0);
+    let tokens = 0;
+    for (const inner of part.content ?? []) {
+      if (inner instanceof vscode.LanguageModelTextPart) {
+        tokens += estimateTextTokenCount(inner.value);
+      } else {
+        tokens += 8;
+      }
+    }
+    tokens += 4; // tool result framing overhead
+    return tokens;
   }
 
   if (part instanceof vscode.LanguageModelDataPart) {
@@ -131,7 +149,8 @@ function estimatePartTokenCount(part: unknown): number {
       return estimateTextTokenCount(dataPartToText(part));
     }
     if (part.mimeType.startsWith('image/')) {
-      return Math.max(85, Math.ceil(part.data.byteLength / 1536));
+      // Vision models tokenize images as fixed-size patches
+      return Math.max(85, Math.ceil(part.data.byteLength / 64));
     }
     return Math.max(1, Math.ceil(part.data.byteLength / 3));
   }

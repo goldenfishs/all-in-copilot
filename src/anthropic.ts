@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { ResolvedModelConfig } from './types';
 import { collectToolResultText, inputPartToText, isToolResultPart } from './messageParts';
+import { logger } from './logger';
 import {
   estimateMessagesTokenCount,
   estimateTextTokenCount,
@@ -274,9 +275,23 @@ function processAnthropicEvent(
   stats: { textTokens: number; usageReported: boolean; usage?: TokenUsage },
 ): void {
   const type = event.type;
-  const usage = readAnthropicUsage(event.usage ?? readRecord(event.message)?.usage);
+  const rawMessage = readRecord(event.message);
+  const usage = readAnthropicUsage(event.usage ?? rawMessage?.usage);
   if (usage) {
     stats.usage = mergeTokenUsage(stats.usage, usage);
+  }
+
+  // Debug: log event types and usage presence for troubleshooting
+  if (type === 'message_start' || type === 'message_delta' || type === 'content_block_start') {
+    const hasUsage = usage !== undefined;
+    const hasMessageUsage = rawMessage?.usage !== undefined;
+    logger.debug('Anthropic event', {
+      type,
+      hasUsage,
+      hasMessageUsage,
+      eventKeys: Object.keys(event),
+      messageKeys: rawMessage ? Object.keys(rawMessage) : [],
+    });
   }
 
   if (type === 'content_block_start') {
